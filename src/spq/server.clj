@@ -10,14 +10,20 @@
              [route :as route]]
             [taoensso.timbre :as timbre]))
 
-(defhandler status-handler
+(defhandler get-status-handler
   [req]
-  {:status 200 :body "good to go"})
+  {:status 200 :body (str "good to go. thanks for: "  {:headers {:status (:status (:headers req))}})})
+
+(defhandler post-status-handler
+  [req]
+  {:status 200 :body (str "good to go. thanks for: " {:body (:body req)
+                                                      :headers {:status (:status (:headers req))}})})
 
 (defn main
   [port]
   (http/start!
-   [(GET  "/status" [] status-handler)
+   [(GET  "/status" [] get-status-handler)
+    (POST  "/status" [] post-status-handler)
     (route/not-found "No such page.")]
    port))
 

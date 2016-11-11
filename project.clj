@@ -2,10 +2,11 @@
   :description "simple persistent queue"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.8.0"]
+  :dependencies [
+                 [org.clojure/clojure "1.8.0"]
                  [com.taoensso/timbre "4.7.4"]
                  [org.clojure/core.async "0.2.395"]
-                 [factual/durable-queue "0.1.6-SNAPSHOT"]
+                 [factual/durable-queue "0.1.5"]
                  [aleph "0.4.1"]
                  [compojure "1.6.0-beta1"]
                  [cheshire "5.6.3"]
