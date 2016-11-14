@@ -18,19 +18,28 @@
   [name args & forms]
   `(defn ~name
      ~args
-     (s/take!
-      (s/->source
-       (a/go
-         (try
-           (let [~args (map #(update-in % [:body] (fn [x#]
-                                                    (if x#
-                                                      (bs/to-string x#)
-                                                      x#)))
-                            ~args)]
-             ~@forms)
-           (catch Throwable ex#
-             (timbre/error ex#)
-             (throw ex#))))))))
+     (let [start# (System/nanoTime)]
+       (d/on-realized
+        (s/take!
+         (s/->source
+          (a/go
+            (try
+              (let [~args (map #(update-in % [:body] (fn [x#]
+                                                       (if x#
+                                                         (bs/to-string x#)
+                                                         x#)))
+                               ~args)]
+                ~@forms)
+              (catch Throwable ex#
+                (timbre/error ex#)
+                (throw ex#))))))
+        (fn [rep#] (let [[req#] ~args]
+                     (timbre/info (:status rep#)
+                                  (:request-method req#)
+                                  (:uri req#)
+                                  (format "%.2f%s" (/ (double (- (System/nanoTime) start#)) 1000000.0) "ms"))))
+        (fn [rep#] (timbre/error "error with" ~args rep#))))
+     ))
 
 (defn start!
   [router port]
