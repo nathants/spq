@@ -31,29 +31,30 @@
                                ~args)]
                 ~@forms)
               (catch Throwable ex#
-                (timbre/error ex#)
+                (println ex#)
                 (throw ex#))))))
         (fn [rep#] (let [[req#] ~args]
                      (timbre/info (:status rep#)
                                   (:request-method req#)
                                   (:uri req#)
                                   (format "%.2f%s" (/ (double (- (System/nanoTime) start#)) 1000000.0) "ms"))))
-        (fn [rep#] (timbre/error "error with" ~args rep#))))
+        (fn [rep#] (println "error with" ~args rep#))))
      ))
 
 (defn start!
   [router port]
   (http/start-server
-   (->> router (apply compojure/routes) params/wrap-params) {:port port}))
+   (params/wrap-params (apply compojure/routes router))
+   {:port port}))
 
 (defn get
   [url & [opts]]
-  (d/chain
-   (http/get url opts)
-   #(update-in % [:body] bs/to-string)))
+  (-> (http/get url opts)
+    (d/chain #(update-in % [:body] bs/to-string))
+    (d/timeout! 1000 :fail)))
 
 (defn post
   [url & [opts]]
-  (d/chain
-   (http/post url opts)
-   #(update-in % [:body] bs/to-string)))
+  (-> (http/post url opts)
+    (d/chain #(update-in % [:body] bs/to-string))
+    (d/timeout! 1000 :fail)))

@@ -1,32 +1,60 @@
 (ns spq.server
   (:gen-class)
   (:require [byte-streams :as bs]
-            [cheshire.core :as json]
+            [durable-queue :as dq]
             [manifold.deferred :as d]
             [clojure.core.async :as a]
             [spq.http :as http :refer [defhandler]]
+            [spq.lib :as lib]
             [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
             [taoensso.timbre :as timbre]))
 
-(defhandler get-status-handler
-  [req]
-  {:status 200 :body (str "good to go. thanks for: "  {:headers {:status (:status (:headers req))}})})
+(def queue)
+(def conf)
 
-(defhandler post-status-handler
+(defhandler get-status
   [req]
-  {:status 200 :body (str "good to go. thanks for: " {:body (:body req)
-                                                      :headers {:status (:status (:headers req))}})})
+  {:status 200
+   :body (lib/json-dumps
+          {:headers {:status (:status (:headers req))}
+           :query-params (:query-params req)})})
+
+(defhandler post-status
+  [req]
+  {:status 200
+   :body (lib/json-dumps
+          {:body (:body req)
+           :headers {:status (:status (:headers req))}
+           :query-params (:query-params req)})})
+
+(defhandler post-put
+  [req]
+  )
 
 (defn main
-  [port]
+  [port & confs]
+  ;; (def conf (apply lib/load-confs confs))
+  ;; (def queue (lib/open-queue))
   (http/start!
-   [(GET  "/status" [] get-status-handler)
-    (POST  "/status" [] post-status-handler)
+   [
+    ;; health checks
+    (GET  "/status"   [] get-status)
+    (POST "/status"   [] post-status)
+
+    ;; queue lifecycle
+    ;; (POST "/put"      [] post-put)
+    #_(POST "/take"     [] post-take)
+    #_(POST "/retry"    [] post-retry)
+    #_(POST "/complete" [] post-complete)
+
+    ;; stats
+    #_(GET "/stats" [] get-stats)
+
     (route/not-found "No such page.")]
    port))
 
 (defn -main
-  [port]
-  (main port))
+  [port & confs]
+  (apply main (read-string port) confs))
