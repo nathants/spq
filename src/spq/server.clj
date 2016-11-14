@@ -1,23 +1,23 @@
 (ns spq.server
   (:gen-class)
-  (:require [byte-streams :as bs]
-            [durable-queue :as dq]
-            [manifold.deferred :as d]
-            [clojure.core.async :as a]
-            [spq.http :as http :refer [defhandler]]
-            [spq.lib :as lib]
-            [compojure
+  (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
-            [taoensso.timbre :as timbre]
-            [cheshire.core :as json]))
+            [durable-queue :as dq]
+            [spq
+             [http :as http :refer [defhandler]]
+             [lib :as lib]]
+            [taoensso.timbre :as timbre]))
 
 (def queue)
 (def conf)
 (def tasks)
 
 (defn new-task-id
-  [] ;; putIfAbsent to the atom. maybe just use j.u.ConcHashMap?
+  []
+  ;; TODO do this with go-supervised more elegant/performant?
+  ;; TODO do this with agent and callback, more elegant/performant?
+  ;; TODO globally unique is good enough? or better to namespace per queue-name?
   (let [id (lib/uuid)
         m (swap! tasks #(if-not (get % id)
                           (assoc % id nil)
@@ -31,7 +31,7 @@
   {:status 200
    :body (lib/json-dumps
           {:headers {:status (:status (:headers req))}
-           :params (:params req)})})
+           :query-params (:params req)})})
 
 (defhandler post-status
   [req]
@@ -39,22 +39,53 @@
    :body (lib/json-dumps
           {:body (:body req)
            :headers {:status (:status (:headers req))}
-           :params (:params req)})})
+           :query-params (:params req)})})
+
+
+(defhandler post-retry
+  [req]
+  (let [id (:body req)]
+    (if-let [task (get-in @tasks [id :task])]
+      (do (dq/retry! task)
+          ;; TODO need to try catch any deref of task, because io
+          ;; checksum can fail
+          (timbre/info "retry!" id @task)
+          {:status 200
+           :body (str "marked retry for task with id: " id)})
+      {:status 204
+       :body (str "no such task to retry with id: " id)})))
+
+
+(defhandler post-complete
+  [req]
+  (let [id (:body req)]
+    (if-let [task (get-in @tasks [id :task])]
+      (do (dq/complete! task)
+          ;; TODO need to try catch any deref of task, because io
+          ;; checksum can fail
+          (timbre/info "complete!" id @task)
+          {:status 200
+           :body (str "completed for task with id: " id)})
+      {:status 204
+       :body (str "no such task to complete with id: " id)})))
+
 
 (defhandler post-take
   [req]
   (let [queue-name (:queue (:params req))
-        task (dq/take! queue queue-name 5000 ::empty)]
+        timeout-ms (Long/parseLong (get (:params req) :timeout-ms "5000"))
+        task (dq/take! queue queue-name timeout-ms ::empty)]
     (if (= ::empty task)
-      {:status 204
-       :body "not items available to take"}
+      (do (timbre/info "nothing to take for queue:" queue-name)
+          {:status 204
+           :body "no items available to take"})
       (let [id (new-task-id)
             ;; TODO need to wrap task derefing in a try catch because
             ;; it can io error on checksum fail
             item @task]
-        (swap! tasks assoc id task) ;; TODO how do deal with auto
-                                    ;; retry? need some kind of
-                                    ;; timeout
+        ;; TODO how do deal with auto retry? need some kind of timeout
+        (swap! tasks assoc id {:task task
+                               :time (System/nanoTime)})
         (timbre/info "take!" queue-name item)
         {:status 200
          :headers {:id id}
@@ -70,13 +101,10 @@
 
 (defhandler get-stats
   [req]
-  (timbre/info queue)
   {:status 200
    :body (->> queue
            dq/stats
-           (reduce-kv (fn [m k v]
-                        (assoc m k (select-keys v [:enqueued :retried :completed :in-progress])))
-                      {})
+           (reduce-kv #(assoc %1 %2 (select-keys %3 [:enqueued :retried :completed :in-progress])) {})
            lib/json-dumps)})
 
 (defn main
@@ -93,8 +121,8 @@
     ;; queue lifecycle
     (POST "/put"      [] post-put)
     (POST "/take"     [] post-take)
-    #_(POST "/retry"    [] post-retry)
-    #_(POST "/complete" [] post-complete)
+    (POST "/retry"    [] post-retry)
+    (POST "/complete" [] post-complete)
 
     ;; stats
     (GET "/stats" [] get-stats)
