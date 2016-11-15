@@ -3,6 +3,7 @@
   (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
+            [clj-confs.core :as confs]
             [durable-queue :as dq]
             [spq
              [http :as http :refer [defhandler]]
@@ -108,8 +109,8 @@
            lib/json-dumps)})
 
 (defn main
-  [port & confs]
-  (def conf (apply lib/load-confs confs))
+  [port & conf-paths]
+  (def conf (apply confs/load conf-paths))
   (def queue (lib/open-queue))
   (def tasks (atom {}))
   (http/start!
@@ -131,5 +132,5 @@
    port))
 
 (defn -main
-  [port & confs]
-  (apply main (read-string port) confs))
+  [port & conf-paths]
+  (apply main (read-string port) conf-paths))
