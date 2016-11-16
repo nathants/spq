@@ -54,7 +54,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 1 :retried 0 :completed 0 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take an item off the queue
@@ -71,7 +71,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 1 :retried 0 :completed 0 :in-progress 1}}
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
                    (lib/json-loads (:body resp))))
 
           ;; retry the item, aka re-enqueue it
@@ -85,7 +85,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 0 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take the retried item
@@ -97,7 +97,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 0 :in-progress 1}}
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
                    (lib/json-loads (:body resp))))
 
           ;; complete the item, marking it as done
@@ -112,7 +112,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 1 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
@@ -124,7 +124,9 @@
     (let [items (for [i (range 10)]
                   {:work-item i})
 
-          [few-i more-i rest-i] (partition-all 4 (range 10))
+          few-i  [0 1 2 3]
+          more-i [4 5 6 7]
+          rest-i [8 9]
 
           ;; check stats
           resp (http/get (url "/stats"))
@@ -139,62 +141,65 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 0 :completed 0 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 10 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
-          few (vec
-               (for [i few-i]
-                 (let [resp (http/post (url "/take?queue=queue_1"))
-                       _ (is (= 200 (:status resp)))
-                       id (-> resp :headers :id)
-                       item (lib/json-loads (:body resp))]
-                   (assert (= item (nth items i)))
-                   {:id id :item item})))
+          ;; take the few
+          the-few (vec
+                   (for [i few-i]
+                     (let [resp (http/post (url "/take?queue=queue_1"))
+                           _ (is (= 200 (:status resp)))
+                           id (-> resp :headers :id)
+                           item (lib/json-loads (:body resp))]
+                       (assert (= item (nth items i)))
+                       {:id id :item item})))
 
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 0 :completed 0 :in-progress 4}}
+          _ (is (= {:queue_1 {:num-queued 10 :num-active 4}}
                    (lib/json-loads (:body resp))))
 
-          more (vec
-                (for [i more-i]
-                  (let [resp (http/post (url "/take?queue=queue_1"))
-                        _ (is (= 200 (:status resp)))
-                        id (-> resp :headers :id)
-                        item (lib/json-loads (:body resp))]
-                    (assert (= item (nth items i)))
-                    {:id id :item item})))
+          ;; take the more
+          the-more (vec
+                    (for [i more-i]
+                      (let [resp (http/post (url "/take?queue=queue_1"))
+                            _ (is (= 200 (:status resp)))
+                            id (-> resp :headers :id)
+                            item (lib/json-loads (:body resp))]
+                        (assert (= item (nth items i)))
+                        {:id id :item item})))
 
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 0 :completed 0 :in-progress 8}}
+          _ (is (= {:queue_1 {:num-queued 10 :num-active 8}}
                    (lib/json-loads (:body resp))))
 
 
-          ;; retry the few
-          _ (doseq [{:keys [id]} few]
+          ;; retry the the-few
+          _ (doseq [{:keys [id]} the-few]
               (let [resp (http/post (url "/retry") {:body id})
                     _ (is (= 200 (:status resp)))]))
 
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 4 :completed 0 :in-progress 4}}
+          _ (is (= {:queue_1 {:num-queued 10 :num-active 4}}
                    (lib/json-loads (:body resp))))
 
-          ;; complete the more
-          _ (doseq [{:keys [id]} more]
+          ;; complete the the-more
+          _ (doseq [{:keys [id]} the-more]
               (let [resp (http/post (url "/complete") {:body id})
                     _ (is (= 200 (:status resp)))]))
 
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 4 :completed 4 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 6 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
+          ;; take the rest, which should be the few which were all retried instead of completed
           the-rest (vec
                     (for [i rest-i]
                       (let [resp (http/post (url "/take?queue=queue_1"))
@@ -207,7 +212,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 4 :completed 4 :in-progress 2}}
+          _ (is (= {:queue_1 {:num-queued 6 :num-active 2}}
                    (lib/json-loads (:body resp))))
 
           ;; complete the rest
@@ -218,7 +223,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 4 :completed 6 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 4 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
           everything-else (loop [res []]
@@ -227,8 +232,13 @@
                                 200 (recur (conj res {:id (-> resp :headers :id)
                                                       :item (lib/json-loads (:body resp))}))
                                 204 res)))
+          _ (is (= everything-else the-few))
 
-          ;; _ (is (= everything-else few))
+          ;; check stats
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queue_1 {:num-queued 4 :num-active 4}}
+                   (lib/json-loads (:body resp))))
 
           ;; complete everything else
           _ (doseq [{:keys [id]} everything-else]
@@ -238,57 +248,16 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:enqueued 10 :retried 4 :completed 10 :in-progress 0}}
+          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
                    (lib/json-loads (:body resp))))
 
-          ;; take an item off the queue
+          ;; the retries of the-few put them back at the end of the queue
+          _ (is (= (concat (drop 4 items) (take 4 items))
+                   (map :item (concat the-more the-rest everything-else))))
 
-          ;; ;; take fails when there is nothing to take
-          ;; resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
-          ;; _ (is (= 204 (:status resp)))
-
-          ;; ;; check stats
-          ;; resp (http/get (url "/stats"))
-          ;; _ (is (= 200 (:status resp)))
-          ;; _ (is (= {:queue_1 {:enqueued 1 :retried 0 :completed 0 :in-progress 1}}
-          ;;          (lib/json-loads (:body resp))))
-          ;; ;; retry is idempotent
-          ;; resp (http/post (url "/retry") {:body id})
-          ;; _ (is (= 200 (:status resp)))
-
-          ;; ;; check stats
-          ;; resp (http/get (url "/stats"))
-          ;; _ (is (= 200 (:status resp)))
-          ;; _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 0 :in-progress 0}}
-          ;;          (lib/json-loads (:body resp))))
-
-          ;; ;; take the retried item
-          ;; resp (http/post (url "/take?queue=queue_1"))
-          ;; id (-> resp :headers :id)
-          ;; _ (is (= 200 (:status resp)))
-          ;; _ (is (= item (lib/json-loads (:body resp))))
-
-          ;; ;; check stats
-          ;; resp (http/get (url "/stats"))
-          ;; _ (is (= 200 (:status resp)))
-          ;; _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 0 :in-progress 1}}
-          ;;          (lib/json-loads (:body resp))))
-
-
-
-          ;; ;; complete is idempotent
-          ;; resp (http/post (url "/complete") {:body id})
-          ;; _ (is (= 200 (:status resp)))
-
-          ;; ;; check stats
-          ;; resp (http/get (url "/stats"))
-          ;; _ (is (= 200 (:status resp)))
-          ;; _ (is (= {:queue_1 {:enqueued 1 :retried 1 :completed 1 :in-progress 0}}
-          ;;          (lib/json-loads (:body resp))))
-
-          ;; ;; take fails when there is nothing to take
-          ;; resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
-          ;; _ (is (= 204 (:status resp)))
-          ])))
+          ;; what came in is what came out
+          _ (is (= (set items)
+                   (set (map :item (concat the-more the-rest everything-else)))
+                   (set (map :item (concat the-few the-more the-rest)))))])))
 
 ;; TODO test auto timeout

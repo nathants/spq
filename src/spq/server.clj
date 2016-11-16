@@ -12,7 +12,7 @@
 
 (def queue)
 (def conf)
-(def tasks)
+(def state)
 
 (defhandler get-status
   [req]
@@ -32,21 +32,21 @@
 (defhandler post-retry
   [req]
   (let [id (:body req)]
-    (if-let [task (get-in @tasks [id :task])]
+    (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/retry! task)
-          ;; (swap! tasks assoc-in [:retries])
+          (swap! state assoc-in [:retries task] id)
           (timbre/info "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204
        :body (str "no such task to retry with id: " id)})))
 
-
 (defhandler post-complete
   [req]
   (let [id (:body req)]
-    (if-let [task (get-in @tasks [id :task])]
+    (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/complete! task)
+          ;; TODO cleanup :tasks and :retries from @state
           (timbre/info "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
@@ -56,19 +56,20 @@
 (defn assoc-task
   [m id task]
   (assert (not (contains? m id)))
-  (assoc m id {:task task
-               :time (System/nanoTime)}))
+  (assoc-in m [:tasks id] {:task task
+                           :time (System/nanoTime)}))
 
 (defn assoc-task!
-  [tasks task]
-  (loop [id (str (hash task))
+  [state task]
+  (loop [id (or (get-in @state [:retries task])
+                (str (hash task)))
          i 0]
     (condp = (try
-               (swap! tasks assoc-task id task)
+               (swap! state assoc-task id task)
                (catch AssertionError ex
-                 (timbre/info "task-id collission, looping. count:" i id @tasks)
+                 (timbre/info "task-id collission, looping. count:" i id)
                  (if (> i 1000)
-                   (timbre/error "failed to find tasks unique id for tasks task, this should never happen")
+                   (timbre/error "failed to find unique id for task, this should never happen")
                    (lib/shutdown))
                  ::fail))
       ::fail (recur (str (hash (Object.))) (inc i))
@@ -84,7 +85,7 @@
           {:status 204
            :body "no items available to take"})
       (let [item (lib/deref-task task)
-            id (assoc-task! tasks task)]
+            id (assoc-task! state task)]
         (timbre/info "take!" queue-name item)
         {:status 200
          :headers {:id id}
@@ -103,14 +104,16 @@
   {:status 200
    :body (->> queue
            dq/stats
-           (reduce-kv #(assoc %1 %2 (select-keys %3 [:enqueued :retried :completed :in-progress])) {})
+           (reduce-kv #(assoc %1 %2 {:num-queued (- (:enqueued %3) (:completed %3))
+                                     :num-active (:in-progress %3)})
+                      {})
            lib/json-dumps)})
 
 (defn main
   [port & conf-paths]
   (def conf (apply confs/load conf-paths))
   (def queue (lib/open-queue))
-  (def tasks (atom {}))
+  (def state (atom {}))
   (http/start!
    [
     ;; health checks
