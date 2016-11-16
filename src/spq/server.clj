@@ -3,7 +3,7 @@
   (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
-            [clj-confs.core :as confs]
+            [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
             [spq
              [http :as http :refer [defhandler]]
@@ -11,7 +11,6 @@
             [taoensso.timbre :as timbre]))
 
 (def queue)
-(def conf)
 (def state)
 
 (defhandler get-status
@@ -50,6 +49,8 @@
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/complete! task)
+          ;; TODO we could potentially delay dissocs, and batch them
+          ;; up to reduce swap contention. does it even matter?
           (swap! state (fn [m]
                          (-> m
                            (update-in [:retries] dissoc task)
@@ -88,8 +89,9 @@
 (defhandler post-take
   [req]
   (let [queue-name (:queue (:params req))
-        timeout-ms (Long/parseLong (get (:params req) :timeout-ms "5000"))
-        task (dq/take! queue queue-name timeout-ms ::empty)]
+        default (str (conf :server :take-timeout-milliseconds))
+        timeout (Long/parseLong (get (:params req) :timeout-ms default))
+        task (dq/take! queue queue-name timeout ::empty)]
     (if (= ::empty task)
       (do (timbre/info "nothing to take for queue:" queue-name)
           {:status 204
@@ -120,8 +122,8 @@
            lib/json-dumps)})
 
 (defn main
-  [port & conf-paths]
-  (def conf (apply confs/load conf-paths))
+  [port & extra-conf-paths]
+  (apply confs/reset! (concat extra-conf-paths ["resources/config.edn"]))
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
@@ -144,5 +146,5 @@
    port))
 
 (defn -main
-  [port & conf-paths]
-  (apply main (read-string port) conf-paths))
+  [port & extra-conf-paths]
+  (apply main (read-string port) extra-conf-paths))

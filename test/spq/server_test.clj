@@ -15,11 +15,11 @@
   (format "http://localhost:%s%s" @port url))
 
 (defmacro with-server
-  [route-fn reboot-server-fn & forms]
+  [route-fn reboot-server-fn edn-str & forms]
   `(do
      (lib/run "rm -rf" lib/queue-path)
      (let [port# (atom (rand-port))
-           server# (atom (sut/main @port#))
+           server# (atom (sut/main @port# ~edn-str))
            ~route-fn #(route port# %)
            ~reboot-server-fn (fn []
                                (.close @server#)
@@ -30,16 +30,15 @@
          (finally
            (.close @server#))))))
 
-
 (deftest get-status
-  (with-server url _
+  (with-server url _ ""
     (let [opts {:headers {:status "+1"}
                 :query-params {:thingy "123"}}
           resp (http/get (url "/status") opts)]
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest post-status
-  (with-server url _
+  (with-server url _ ""
     (let [opts {:body "a string"
                 :headers {:status "+1"}
                 :query-params {:thingy "123"}}
@@ -47,7 +46,7 @@
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest kitchen-sink
-  (with-server url _
+  (with-server url _ ""
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -123,7 +122,7 @@
           _ (is (= 204 (:status resp)))])))
 
 (deftest add-a-few-items
-  (with-server url _
+  (with-server url _ ""
     (let [items (for [i (range 10)]
                   {:work-num i})
 
@@ -263,8 +262,11 @@
                    (sort-by :work-num (map :item (concat the-more the-rest everything-else)))
                    (sort-by :work-num (map :item (concat the-few the-more the-rest)))))])))
 
+;; TODO implement retries with aleph.time/in or aleph.time/every
+
 (deftest auto-retry-timeout
-  (with-server url _
+  ;; (assert false)
+  (with-server url _ ""
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue

@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.core.async :as a]
             [clojure.edn :as edn]
+            [confs.core :refer [conf]]
             [clojure.java
              [io :as io]
              [shell :as sh]]
@@ -51,7 +52,7 @@
 (defn open-queue
   []
   (timbre/info "opening queues at path:" queue-path)
-  (dq/queues queue-path {:fsync-put? true :fsync-take? true}))
+  (dq/queues queue-path (conf :durable-queue)))
 
 (defn uuid
   []

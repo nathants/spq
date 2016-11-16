@@ -1,0 +1,11 @@
+{
+
+ ;; https://github.com/Factual/durable-queue#configuring-the-queues
+ :durable-queue {:fsync-put? true
+                 :fsync-take? true
+                 :slab-size 67108864} ;; enqueued item cannot be larger than this
+
+ :server {:retry-timeout-minutes 5 ;; how long to wait before automatically /retry[ing] a /take[n] item if /complete has not been called
+          :take-timeout-milliseconds 5000} ;; how long to wait before failing on a /take when queue is empty
+
+ }

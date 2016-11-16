@@ -23,6 +23,7 @@
   `(defn ~-name
      ~args
      (let [start# (System/nanoTime)]
+       ;; TODO consider just using manifold, dropping core.async?
        (-> (a/go
              (try (let [~args (map (fn [x#] (update-in x# [:body] #(if % (bs/to-string %) %))) ~args)]
                     ~@forms)
