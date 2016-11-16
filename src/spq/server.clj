@@ -39,19 +39,29 @@
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204
-       :body (str "no such task to retry with id: " id)})))
+       :body (str "no such task to complete with id: " id
+                  ". either it has already been completed, "
+                  "or the server crashed and it will be "
+                  "be retried anyway because it was never "
+                  "completed.")})))
 
 (defhandler post-complete
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/complete! task)
-          ;; TODO cleanup :tasks and :retries from @state
+          (swap! state (fn [m]
+                         (-> m
+                           (update-in [:retries] dissoc task)
+                           (update-in [:tasks] dissoc id))))
           (timbre/info "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
       {:status 204
-       :body (str "no such task to complete with id: " id)})))
+       :body (str "no such task to complete with id: " id
+                  ". either it has already been completed, "
+                  "or the server crashed and it will be "
+                  "taken again by another caller.")})))
 
 (defn assoc-task
   [m id task]
@@ -113,7 +123,8 @@
   [port & conf-paths]
   (def conf (apply confs/load conf-paths))
   (def queue (lib/open-queue))
-  (def state (atom {}))
+  (def state (atom {:retries {}
+                    :tasks {}}))
   (http/start!
    [
     ;; health checks

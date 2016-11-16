@@ -12,30 +12,34 @@
 
 (defn route
   [port url]
-  (format "http://localhost:%s%s" port url))
+  (format "http://localhost:%s%s" @port url))
 
 (defmacro with-server
-  [route-fn & forms]
+  [route-fn reboot-server-fn & forms]
   `(do
      (lib/run "rm -rf" lib/queue-path)
-     (let [port# (rand-port)
-           server# (sut/main port#)
-           ~route-fn #(route port# %)]
+     (let [port# (atom (rand-port))
+           server# (atom (sut/main @port#))
+           ~route-fn #(route port# %)
+           ~reboot-server-fn (fn []
+                               (.close @server#)
+                               (reset! port# (rand-port))
+                               (reset! server# (sut/main @port#)))]
        (try
          ~@forms
          (finally
-           (.close server#))))))
+           (.close @server#))))))
 
 
 (deftest get-status
-  (with-server url
+  (with-server url _
     (let [opts {:headers {:status "+1"}
                 :query-params {:thingy "123"}}
           resp (http/get (url "/status") opts)]
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest post-status
-  (with-server url
+  (with-server url _
     (let [opts {:body "a string"
                 :headers {:status "+1"}
                 :query-params {:thingy "123"}}
@@ -43,8 +47,8 @@
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest kitchen-sink
-  (with-server url
-    (let [item {:work-item "number1"}
+  (with-server url _
+    (let [item {:work-num "number1"}
 
           ;; put an item on a queue
           resp (http/post (url "/put") {:body (lib/json-dumps item)
@@ -104,10 +108,9 @@
           resp (http/post (url "/complete") {:body id})
           _ (is (= 200 (:status resp)))
 
-
-          ;; complete is idempotent
+          ;; complete 204s if that id is not completeable
           resp (http/post (url "/complete") {:body id})
-          _ (is (= 200 (:status resp)))
+          _ (is (= 204 (:status resp)))
 
           ;; check stats
           resp (http/get (url "/stats"))
@@ -120,9 +123,9 @@
           _ (is (= 204 (:status resp)))])))
 
 (deftest add-a-few-items
-  (with-server url
+  (with-server url _
     (let [items (for [i (range 10)]
-                  {:work-item i})
+                  {:work-num i})
 
           few-i  [0 1 2 3]
           more-i [4 5 6 7]
@@ -256,8 +259,86 @@
                    (map :item (concat the-more the-rest everything-else))))
 
           ;; what came in is what came out
-          _ (is (= (set items)
-                   (set (map :item (concat the-more the-rest everything-else)))
-                   (set (map :item (concat the-few the-more the-rest)))))])))
+          _ (is (= items
+                   (sort-by :work-num (map :item (concat the-more the-rest everything-else)))
+                   (sort-by :work-num (map :item (concat the-few the-more the-rest)))))])))
+
+(deftest auto-retry-timeout
+  (with-server url _
+    (let [item {:work-num "number1"}
+
+          ;; put an item on a queue
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :query-params {:queue "queue_1"}})
+          _ (is (= 200 (:status resp)))
+
+          ;; take an item off the queue
+          resp (http/post (url "/take?queue=queue_1"))
+          id (-> resp :headers :id)
+          _ (is (string? id))
+          _ (is (= 200 (:status resp)))
+          _ (is (= item (lib/json-loads (:body resp))))
+
+          ;; take fails when there is nothing to take
+          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
+          _ (is (= 204 (:status resp)))
+
+          ;; check stats
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
+                   (lib/json-loads (:body resp))))
+
+          ;; retry the item, aka re-enqueue it
+          resp (http/post (url "/retry") {:body id})
+          _ (is (= 200 (:status resp)))
+
+          ;; retry is idempotent
+          resp (http/post (url "/retry") {:body id})
+          _ (is (= 200 (:status resp)))
+
+          ;; check stats
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
+                   (lib/json-loads (:body resp))))
+
+          ;; take the retried item
+          resp (http/post (url "/take?queue=queue_1"))
+          id (-> resp :headers :id)
+          _ (is (= 200 (:status resp)))
+          _ (is (= item (lib/json-loads (:body resp))))
+
+          ;; check stats
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
+                   (lib/json-loads (:body resp))))
+
+          ;; complete the item, marking it as done
+          resp (http/post (url "/complete") {:body id})
+          _ (is (= 200 (:status resp)))
+
+          ;; complete 204s if that id is not completeable
+          resp (http/post (url "/complete") {:body id})
+          _ (is (= 204 (:status resp)))
+
+          ;; check stats
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
+                   (lib/json-loads (:body resp))))
+
+          ;; take fails when there is nothing to take
+          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
+          _ (is (= 204 (:status resp)))
+
+
+          ])))
+
+;; TODO test with reboots. a complete will fail if taken from a
+;; different server instance than completed to. same for retries. for
+;; retries there is no difference, but for failed completes, it means
+;; the task will be reissued.
 
 ;; TODO test auto timeout
