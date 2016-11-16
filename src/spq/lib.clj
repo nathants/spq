@@ -17,6 +17,16 @@
     (assert (-> res :exit (= 0)) (assoc res :cmd cmd))
     (.trim (:out res))))
 
+(defn shutdown
+  []
+  (when *kill*
+    (timbre/fatal "shutdown. if jvm doesnt exit right after this, it should have")
+    (Thread/sleep 1000)
+    (shutdown-agents)
+    (System/exit 0) ;; soft kill
+    (run "ps h -o ppid $$|xargs sudo kill -9") ;;  hard kill
+    nil))
+
 (defmacro go-supervised
   [name & forms]
   `(a/go
@@ -26,7 +36,7 @@
          (timbre/error e# "supervised go-block excepted:" ~name)
          (when *kill*
            (timbre/error "going to exit because supervised go-block" ~name "excepted and *kill* was set")
-           (System/exit 1))))))
+           (shutdown))))))
 
 (defn json-dumps
   [x]
@@ -46,3 +56,15 @@
 (defn uuid
   []
   (str (java.util.UUID/randomUUID)))
+
+(defn deref-task
+  [task]
+  (try
+    @task
+    (catch java.io.IOException ex
+      (timbre/fatal ex "failed to read queued item from disk")
+      (shutdown))))
+
+(defn abbreviate
+  [x]
+  (apply str (take 250 (str x))))

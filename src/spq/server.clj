@@ -14,19 +14,6 @@
 (def conf)
 (def tasks)
 
-(defn new-task-id
-  []
-  ;; TODO do this with go-supervised more elegant/performant?
-  ;; TODO do this with agent and callback, more elegant/performant?
-  ;; TODO globally unique is good enough? or better to namespace per queue-name?
-  (let [id (lib/uuid)
-        m (swap! tasks #(if-not (get % id)
-                          (assoc % id nil)
-                          %))]
-    (if (contains? m id)
-      id
-      (recur))))
-
 (defhandler get-status
   [req]
   {:status 200
@@ -42,15 +29,13 @@
            :headers {:status (:status (:headers req))}
            :query-params (:params req)})})
 
-
 (defhandler post-retry
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @tasks [id :task])]
       (do (dq/retry! task)
-          ;; TODO need to try catch any deref of task, because io
-          ;; checksum can fail
-          (timbre/info "retry!" id @task)
+          ;; (swap! tasks assoc-in [:retries])
+          (timbre/info "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204
@@ -62,14 +47,32 @@
   (let [id (:body req)]
     (if-let [task (get-in @tasks [id :task])]
       (do (dq/complete! task)
-          ;; TODO need to try catch any deref of task, because io
-          ;; checksum can fail
-          (timbre/info "complete!" id @task)
+          (timbre/info "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
       {:status 204
        :body (str "no such task to complete with id: " id)})))
 
+(defn assoc-task
+  [m id task]
+  (assert (not (contains? m id)))
+  (assoc m id {:task task
+               :time (System/nanoTime)}))
+
+(defn assoc-task!
+  [tasks task]
+  (loop [id (str (hash task))
+         i 0]
+    (condp = (try
+               (swap! tasks assoc-task id task)
+               (catch AssertionError ex
+                 (timbre/info "task-id collission, looping. count:" i id @tasks)
+                 (if (> i 1000)
+                   (timbre/error "failed to find tasks unique id for tasks task, this should never happen")
+                   (lib/shutdown))
+                 ::fail))
+      ::fail (recur (str (hash (Object.))) (inc i))
+      id)))
 
 (defhandler post-take
   [req]
@@ -80,13 +83,8 @@
       (do (timbre/info "nothing to take for queue:" queue-name)
           {:status 204
            :body "no items available to take"})
-      (let [id (new-task-id)
-            ;; TODO need to wrap task derefing in a try catch because
-            ;; it can io error on checksum fail
-            item @task]
-        ;; TODO how do deal with auto retry? need some kind of timeout
-        (swap! tasks assoc id {:task task
-                               :time (System/nanoTime)})
+      (let [item (lib/deref-task task)
+            id (assoc-task! tasks task)]
         (timbre/info "take!" queue-name item)
         {:status 200
          :headers {:id id}
