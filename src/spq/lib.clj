@@ -1,11 +1,8 @@
 (ns spq.lib
   (:require [cheshire.core :as json]
             [clojure.core.async :as a]
-            [clojure.edn :as edn]
-            [confs.core :refer [conf]]
-            [clojure.java
-             [io :as io]
-             [shell :as sh]]
+            [clojure.java.shell :as sh]
+            [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
             [taoensso.timbre :as timbre]))
 
@@ -93,3 +90,7 @@
 (defn abbreviate
   [x]
   (apply str (take 250 (str x))))
+
+(defn minutes-ago
+  [{:keys [time]}]
+  (-> (System/nanoTime) (- time) double (/ 1000000000.0 60.0)))

@@ -130,28 +130,19 @@
                       {})
            lib/json-dumps)})
 
-(defn -swap-retries
-  [m to-retry]
-  (reduce (fn [m [id {:keys [task]}]]
-            (-swap-retry m id task))
-          m
-          to-retry))
-
-(defn -minutes-ago
-  [{:keys [time]}]
-  (-> (System/nanoTime) (- time) double (/ 1000000000.0 60.0)))
-
 (defn period-task
   []
   (try
     (let [to-retry (->> @state
                      :tasks
-                     (filter #(> (-minutes-ago (val %))
+                     (filter #(> (lib/minutes-ago (val %))
                                  (conf :server :retry-timeout-minutes))))]
       (when (seq to-retry)
         (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
-        (swap! state -swap-retries to-retry))
-      (timbre/info :to-rety to-retry))
+        (swap! state #(reduce (fn [% [id {:keys [task]}]]
+                                (-swap-retry % id task))
+                              %
+                              to-retry))))
     (catch Throwable ex
       (timbre/error ex "error in period task"))))
 
