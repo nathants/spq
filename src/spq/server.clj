@@ -3,6 +3,7 @@
   (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
+            [clojure.pprint :as pprint]
             [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
             [manifold.time :as time]
@@ -152,7 +153,7 @@
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
-  (timbre/info confs/*conf*)
+  (timbre/info (str "conf:\n" (with-out-str (pprint/pprint confs/*conf*))))
   (let [cancel-period-task (time/every (conf :server :period-millis) period-task)
         server (http/start!
                 [
