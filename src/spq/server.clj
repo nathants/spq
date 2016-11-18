@@ -149,15 +149,18 @@
 
 (defn main
   [port & {:keys [extra-confs
-                  extra-handlers]}]
+                  extra-handlers
+                  extra-middleware]}]
   (apply confs/reset! (concat extra-confs ["resources/config.edn"]))
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
   (timbre/info (str "conf:\n" (with-out-str (pprint/pprint confs/*conf*))))
+  ;; TODO we should probably monitor the periodic task via a binary
+  ;; sibling process, health checking each other, either kills parent
+  ;; pid of fail to check in.
   (let [cancel-period-task (time/every (conf :server :period-millis) period-task)
         server (-> [
-
                     ;; health checks
                     (GET  "/status"   [] get-status)
                     (POST "/status"   [] post-status)
@@ -168,14 +171,11 @@
                     (POST "/retry"    [] post-retry)
                     (POST "/complete" [] post-complete)
 
-                    ;; stats
-                    (GET "/stats" [] get-stats)
+                    ;; queue stats
+                    (GET "/stats"     [] get-stats)]
 
-                    (route/not-found "No such page.")
-
-                    ]
-                 (concat extra-handlers)
-                 (http/start! port))]
+                 (concat extra-handlers [(route/not-found "No such page.")])
+                 (http/start! :port port :extra-middleware extra-middleware))]
     (fn close-fn []
       (cancel-period-task)
       (.close server))))

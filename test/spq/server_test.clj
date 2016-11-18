@@ -1,10 +1,16 @@
 (ns spq.server-test
   (:require [clj-http.client :as http]
             [clojure.test :refer :all]
+            [compojure
+             [core :as compojure :refer [GET POST]]
+             [route :as route]]
             [spq
+             [http :refer [defhandler defmiddleware]]
              [lib :as lib]
              [server :as sut]]
-            [taoensso.timbre :as timbre]))
+            [taoensso.timbre :as timbre]
+            [byte-streams :as bs]
+            [manifold.deferred :as d]))
 
 (defn rand-port
   []
@@ -22,10 +28,11 @@
      (let [port# (atom (rand-port))
            close-fn# (atom (apply sut/main @port# (apply concat ~opts)))
            ~route-fn #(route port# %)
-           ~reboot-server-fn (fn []
-                               (@close-fn#)
-                               (reset! port# (rand-port))
-                               (reset! close-fn# (apply sut/main @port# (apply concat ~opts))))]
+           ~reboot-server-fn
+           (fn []
+             (@close-fn#)
+             (reset! port# (rand-port))
+             (reset! close-fn# (apply sut/main @port# (apply concat ~opts))))]
        (try
          ~@forms
          (finally
@@ -309,6 +316,31 @@
       (is (= {:retries {}
               :tasks {}}
              @sut/state)))))
+
+(deftest extra-handlers
+  (let [extra-handlers [(GET "/foo" [] (defhandler foo
+                                         [req]
+                                         {:status 200
+                                          :body "bar"}))]]
+    (with-server url _ {:extra-handlers extra-handlers}
+      (let [resp (http/get (url "/foo"))]
+        (is (= 200 (:status resp)))
+        (is (= "bar" (:body resp)))))))
+
+(deftest extra-middleware
+  (let [extra-handlers [(GET "/foo" [] (defhandler foo
+                                         [req]
+                                         {:status 200
+                                          :body (-> req :headers :algo)}))]
+        extra-middleware [(defmiddleware middle-out
+                            ([req] (assoc-in req [:headers :algo] "middle"))
+                            ([rep] (assoc-in rep [:headers :algo] "out")))]]
+    (with-server url _ {:extra-handlers extra-handlers
+                        :extra-middleware extra-middleware}
+      (let [resp (http/get (url "/foo"))]
+        (is (= 200 (:status resp)))
+        (is (= "middle" (:body resp)))
+        (is (= "out" (-> resp :headers :algo)))))))
 
 ;; TODO test with reboots. a complete will fail if taken from a
 ;; different server instance than completed to. same for retries. for

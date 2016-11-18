@@ -46,12 +46,21 @@
                                     (:remote-addr req#))))
           (fn [rep#] (timbre/error "deferred" '~-name "failed with" (first ~args) rep#)))))))
 
+(defmacro defmiddleware
+  [name request-form response-form]
+  `(let [request-fn# (fn ~request-form)
+         response-fn# (fn ~response-form)]
+     (defn ~name
+       [handler#]
+       (fn [request#]
+         (-> request# request-fn# handler# (d/chain response-fn#))))))
+
 (defn start!
-  [router port & {:keys [extra-middleware]}]
+  [router & {:keys [port extra-middleware]}]
   (http/start-server
    (reduce #(%2 %1)
            (apply compojure/routes router)
-           (concat [keyword-params/wrap-keyword-params
-                    params/wrap-params]
-                   extra-middleware))
+           (concat extra-middleware
+                   [keyword-params/wrap-keyword-params
+                    params/wrap-params]))
    {:port port}))
