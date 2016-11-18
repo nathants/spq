@@ -6,7 +6,7 @@
             [durable-queue :as dq]
             [taoensso.timbre :as timbre]))
 
-(def *kill* (doto (not= \n #spy/p (first (System/getenv "KILL")))
+(def *kill* (doto (not= \n (first (System/getenv "KILL")))
               (->> (println "*kill*"))))
 
 (defn run [& args]

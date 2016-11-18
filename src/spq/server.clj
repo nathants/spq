@@ -145,7 +145,8 @@
                               %
                               to-retry))))
     (catch Throwable ex
-      (timbre/error ex "error in period task"))))
+      (timbre/fatal ex "error in period task")
+      (lib/shutdown))))
 
 (defn main
   [port & {:keys [extra-confs

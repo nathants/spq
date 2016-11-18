@@ -5,8 +5,8 @@
              [core :as compojure :refer [GET POST]]
              [route :as route]]
             [spq
-             [http :refer [defhandler defmiddleware]]
              [lib :as lib]
+             [http :refer [defhandler defmiddleware]]
              [server :as sut]]
             [taoensso.timbre :as timbre]
             [byte-streams :as bs]
@@ -76,7 +76,7 @@
           _ (is (= item (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
+          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
           _ (is (= 204 (:status resp)))
 
           ;; check stats
@@ -126,7 +126,7 @@
                    (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
+          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
           _ (is (= 204 (:status resp)))]
 
       ;; no garbage left in state
@@ -242,7 +242,7 @@
                    (lib/json-loads (:body resp))))
 
           everything-else (loop [res []]
-                            (let [resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 50}})]
+                            (let [resp (http/post (url "/take?queue=queue_1&timeout-ms=50"))]
                               (condp = (:status resp)
                                 200 (recur (conj res {:id (-> resp :headers :id)
                                                       :item (lib/json-loads (:body resp))}))
@@ -284,8 +284,7 @@
 
 (deftest auto-retry-timeout
   (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
-                                                      :retry-timeout-minutes 0.001
-                                                      :take-timeout-millis 50}})]}
+                                                      :retry-timeout-minutes 0.001}})]}
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -298,7 +297,7 @@
           _ (is (= item (lib/json-loads (:body resp))))
 
           ;; take fails, there is nothing in the queue
-          resp (http/post (url "/take?queue=queue_1"))
+          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
           _ (is (= 204 (:status resp)))
 
           ;; sleep so it gets auto retried, and re-enqueued
@@ -308,7 +307,6 @@
           resp (http/post (url "/take?queue=queue_1"))
           _ (is (= item (lib/json-loads (:body resp))))
 
-          ;; take fails, there is nothing in the queue
           resp (http/post (url "/complete") {:body (-> resp :headers :id)})
           _ (is (= 200 (:status resp)))]
 

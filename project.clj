@@ -10,9 +10,7 @@
                  [aleph "0.4.1"]
                  [compojure "1.6.0-beta1"]
                  [cheshire "5.6.3"]
-                 [pandect "0.6.1"]
-                 [snapshots/confs "master-b1231ed"]
-                 [snapshots/schema "master-f509969"]]
+                 [snapshots/confs "master-b1231ed"]]
   :uberjar-name "spq.jar"
   :plugins [[s3-wagon-private "1.3.0-alpha2"]]
   :repositories {"snapshots" {:url ~(System/getenv "S3P_SNAPSHOTS_URL")
