@@ -47,9 +47,11 @@
           (fn [rep#] (timbre/error "deferred" '~-name "failed with" (first ~args) rep#)))))))
 
 (defn start!
-  [router port]
+  [router port & {:keys [extra-middleware]}]
   (http/start-server
-   (-> (apply compojure/routes router)
-     keyword-params/wrap-keyword-params
-     params/wrap-params)
+   (reduce #(%2 %1)
+           (apply compojure/routes router)
+           (concat [keyword-params/wrap-keyword-params
+                    params/wrap-params]
+                   extra-middleware))
    {:port port}))

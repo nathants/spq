@@ -1,9 +1,9 @@
 (ns spq.server
   (:gen-class)
-  (:require [compojure
+  (:require [clojure.pprint :as pprint]
+            [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
-            [clojure.pprint :as pprint]
             [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
             [manifold.time :as time]
@@ -148,35 +148,39 @@
       (timbre/error ex "error in period task"))))
 
 (defn main
-  [port & extra-conf-paths]
-  (apply confs/reset! (concat extra-conf-paths ["resources/config.edn"]))
+  [port & {:keys [extra-confs
+                  extra-handlers]}]
+  (apply confs/reset! (concat extra-confs ["resources/config.edn"]))
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
   (timbre/info (str "conf:\n" (with-out-str (pprint/pprint confs/*conf*))))
   (let [cancel-period-task (time/every (conf :server :period-millis) period-task)
-        server (http/start!
-                [
-                 ;; health checks
-                 (GET  "/status"   [] get-status)
-                 (POST "/status"   [] post-status)
+        server (-> [
 
-                 ;; queue lifecycle
-                 (POST "/put"      [] post-put)
-                 (POST "/take"     [] post-take)
-                 (POST "/retry"    [] post-retry)
-                 (POST "/complete" [] post-complete)
+                    ;; health checks
+                    (GET  "/status"   [] get-status)
+                    (POST "/status"   [] post-status)
 
-                 ;; stats
-                 (GET "/stats" [] get-stats)
+                    ;; queue lifecycle
+                    (POST "/put"      [] post-put)
+                    (POST "/take"     [] post-take)
+                    (POST "/retry"    [] post-retry)
+                    (POST "/complete" [] post-complete)
 
-                 (route/not-found "No such page.")]
-                port)]
-    (fn []
+                    ;; stats
+                    (GET "/stats" [] get-stats)
+
+                    (route/not-found "No such page.")
+
+                    ]
+                 (concat extra-handlers)
+                 (http/start! port))]
+    (fn close-fn []
       (cancel-period-task)
       (.close server))))
 
 (defn -main
-  [port & extra-conf-paths]
+  [port & paths]
   (lib/setup-logging)
-  (apply main (read-string port) extra-conf-paths))
+  (main (read-string port) :extra-confs paths))

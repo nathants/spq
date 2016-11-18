@@ -15,31 +15,31 @@
   (format "http://localhost:%s%s" @port url))
 
 (defmacro with-server
-  [route-fn reboot-server-fn edn-str & forms]
+  [route-fn reboot-server-fn opts & forms]
   `(do
      (lib/run "rm -rf" lib/queue-path)
      (lib/setup-logging :short-format true)
      (let [port# (atom (rand-port))
-           close-fn# (atom (sut/main @port# ~edn-str))
+           close-fn# (atom (apply sut/main @port# (apply concat ~opts)))
            ~route-fn #(route port# %)
            ~reboot-server-fn (fn []
                                (@close-fn#)
                                (reset! port# (rand-port))
-                               (reset! close-fn# (sut/main @port#)))]
+                               (reset! close-fn# (apply sut/main @port# (apply concat ~opts))))]
        (try
          ~@forms
          (finally
            (@close-fn#))))))
 
 (deftest get-status
-  (with-server url _ ""
+  (with-server url _ {}
     (let [opts {:headers {:status "+1"}
                 :query-params {:thingy "123"}}
           resp (http/get (url "/status") opts)]
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest post-status
-  (with-server url _ ""
+  (with-server url _ {}
     (let [opts {:body "a string"
                 :headers {:status "+1"}
                 :query-params {:thingy "123"}}
@@ -47,7 +47,7 @@
       (is (= opts (lib/json-loads (:body resp)))))))
 
 (deftest kitchen-sink
-  (with-server url _ ""
+  (with-server url _ {}
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -128,7 +128,7 @@
              @sut/state)))))
 
 (deftest add-a-few-items
-  (with-server url _ ""
+  (with-server url _ {}
     (let [items (for [i (range 10)]
                   {:work-num i})
 
@@ -276,9 +276,9 @@
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
 (deftest auto-retry-timeout
-  (with-server url _ (pr-str {:server {:period-millis 50
-                                       :retry-timeout-minutes 0.001
-                                       :take-timeout-millis 50}})
+  (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
+                                                      :retry-timeout-minutes 0.001
+                                                      :take-timeout-millis 50}})]}
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -315,4 +315,4 @@
 ;; retries there is no difference, but for failed completes, it means
 ;; the task will be reissued.
 
-;; TODO test auto timeout
+;; TODO test with test.check

@@ -37,8 +37,6 @@
                   (str "\n" (timbre/stacktrace err))
                   ""))))}}}))
 
-
-
 (defn shutdown
   []
   (when *kill*
