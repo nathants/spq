@@ -18,6 +18,30 @@
     (assert (-> res :exit (= 0)) (assoc res :cmd cmd))
     (.trim (:out res))))
 
+(defn setup-logging
+  [& [short-format]]
+  (timbre/merge-config!
+   {:appenders
+    {:println
+     {:async? true
+      :fn (if short-format
+            #(let [{:keys [msg_ ?err_]} %]
+               (println (force msg_)
+                        (if-let [err (force ?err_)]
+                          (str "\n" (timbre/stacktrace err))
+                          "")))
+            #(let [{:keys [msg_ hostname_ timestamp_ instant level ?err_]} %]
+               (println
+                (.toString (.toInstant instant))
+                level
+                (force hostname_)
+                (force msg_)
+                (if-let [err (force ?err_)]
+                  (str "\n" (timbre/stacktrace err))
+                  ""))))}}}))
+
+
+
 (defn shutdown
   []
   (when *kill*

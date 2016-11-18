@@ -5,10 +5,17 @@
              [route :as route]]
             [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
+            [manifold.time :as time]
             [spq
              [http :as http :refer [defhandler]]
              [lib :as lib]]
             [taoensso.timbre :as timbre]))
+
+;; TODO consider throttling incoming requests. so that if greather
+;; than n requests are active at a time, new ones are established, but
+;; get queues up for actual work. and if that queue fills up too, then
+;; requests are bounced to the caller with a meaningful status code
+;; telling them to retry in a few seconds or something.
 
 (def queue)
 (def state)
@@ -28,13 +35,19 @@
            :headers {:status (:status (:headers req))}
            :query-params (:params req)})})
 
+(defn -swap-retry
+  [m id task]
+  (-> m
+    (update-in [:tasks] dissoc id)
+    (assoc-in [:retries task] id)))
+
 (defhandler post-retry
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/retry! task)
-          (swap! state assoc-in [:retries task] id)
-          (timbre/info "retry!" id (lib/abbreviate (lib/deref-task task)))
+          (swap! state -swap-retry id task)
+          (timbre/debug "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204
@@ -51,11 +64,10 @@
       (do (dq/complete! task)
           ;; TODO we could potentially delay dissocs, and batch them
           ;; up to reduce swap contention. does it even matter?
-          (swap! state (fn [m]
-                         (-> m
-                           (update-in [:retries] dissoc task)
-                           (update-in [:tasks] dissoc id))))
-          (timbre/info "complete!" id (lib/abbreviate (lib/deref-task task)))
+          (swap! state #(-> %
+                          (update-in [:retries] dissoc task)
+                          (update-in [:tasks] dissoc id)))
+          (timbre/debug "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
       {:status 204
@@ -64,21 +76,18 @@
                   "or the server crashed and it will be "
                   "taken again by another caller.")})))
 
-(defn assoc-task
-  [m id task]
-  (assert (not (contains? m id)))
-  (assoc-in m [:tasks id] {:task task
-                           :time (System/nanoTime)}))
-
-(defn assoc-task!
+(defn -swap-take!
   [state task]
   (loop [id (or (get-in @state [:retries task])
                 (str (hash task)))
          i 0]
     (condp = (try
-               (swap! state assoc-task id task)
+               (swap! state (fn [m]
+                              (assert (not (contains? m id)))
+                              (assoc-in m [:tasks id] {:task task
+                                                       :time (System/nanoTime)})))
                (catch AssertionError ex
-                 (timbre/info "task-id collission, looping. count:" i id)
+                 (timbre/debug "task-id collission, looping. count:" i id)
                  (if (> i 1000)
                    (timbre/error "failed to find unique id for task, this should never happen")
                    (lib/shutdown))
@@ -89,16 +98,16 @@
 (defhandler post-take
   [req]
   (let [queue-name (:queue (:params req))
-        default (str (conf :server :take-timeout-milliseconds))
+        default (str (conf :server :take-timeout-millis))
         timeout (Long/parseLong (get (:params req) :timeout-ms default))
         task (dq/take! queue queue-name timeout ::empty)]
     (if (= ::empty task)
-      (do (timbre/info "nothing to take for queue:" queue-name)
+      (do (timbre/debug "nothing to take for queue:" queue-name)
           {:status 204
            :body "no items available to take"})
       (let [item (lib/deref-task task)
-            id (assoc-task! state task)]
-        (timbre/info "take!" queue-name item)
+            id (-swap-take! state task)]
+        (timbre/debug "take!" queue-name item)
         {:status 200
          :headers {:id id}
          :body (lib/json-dumps item)}))))
@@ -108,7 +117,7 @@
   (let [queue-name (:queue (:params req))
         item (lib/json-loads (:body req))]
     (dq/put! queue queue-name item)
-    (timbre/info "put!" queue-name item)
+    (timbre/debug "put!" queue-name item)
     {:status 200}))
 
 (defhandler get-stats
@@ -121,30 +130,61 @@
                       {})
            lib/json-dumps)})
 
+(defn -swap-retries
+  [m to-retry]
+  (reduce (fn [m [id {:keys [task]}]]
+            (-swap-retry m id task))
+          m
+          to-retry))
+
+(defn -minutes-ago
+  [{:keys [time]}]
+  (-> (System/nanoTime) (- time) double (/ 1000000000.0 60.0)))
+
+(defn period-task
+  []
+  (try
+    (let [to-retry (->> @state
+                     :tasks
+                     (filter #(> (-minutes-ago (val %))
+                                 (conf :server :retry-timeout-minutes))))]
+      (when (seq to-retry)
+        (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
+        (swap! state -swap-retries to-retry))
+      (timbre/info :to-rety to-retry))
+    (catch Throwable ex
+      (timbre/error ex "error in period task"))))
+
 (defn main
   [port & extra-conf-paths]
   (apply confs/reset! (concat extra-conf-paths ["resources/config.edn"]))
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
-  (http/start!
-   [
-    ;; health checks
-    (GET  "/status"   [] get-status)
-    (POST "/status"   [] post-status)
+  (timbre/info confs/*conf*)
+  (let [cancel-period-task (time/every (conf :server :period-millis) period-task)
+        server (http/start!
+                [
+                 ;; health checks
+                 (GET  "/status"   [] get-status)
+                 (POST "/status"   [] post-status)
 
-    ;; queue lifecycle
-    (POST "/put"      [] post-put)
-    (POST "/take"     [] post-take)
-    (POST "/retry"    [] post-retry)
-    (POST "/complete" [] post-complete)
+                 ;; queue lifecycle
+                 (POST "/put"      [] post-put)
+                 (POST "/take"     [] post-take)
+                 (POST "/retry"    [] post-retry)
+                 (POST "/complete" [] post-complete)
 
-    ;; stats
-    (GET "/stats" [] get-stats)
+                 ;; stats
+                 (GET "/stats" [] get-stats)
 
-    (route/not-found "No such page.")]
-   port))
+                 (route/not-found "No such page.")]
+                port)]
+    (fn []
+      (cancel-period-task)
+      (.close server))))
 
 (defn -main
   [port & extra-conf-paths]
+  (lib/setup-logging)
   (apply main (read-string port) extra-conf-paths))

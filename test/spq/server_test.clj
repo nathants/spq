@@ -18,17 +18,18 @@
   [route-fn reboot-server-fn edn-str & forms]
   `(do
      (lib/run "rm -rf" lib/queue-path)
+     (lib/setup-logging :short-format true)
      (let [port# (atom (rand-port))
-           server# (atom (sut/main @port# ~edn-str))
+           close-fn# (atom (sut/main @port# ~edn-str))
            ~route-fn #(route port# %)
            ~reboot-server-fn (fn []
-                               (.close @server#)
+                               (@close-fn#)
                                (reset! port# (rand-port))
-                               (reset! server# (sut/main @port#)))]
+                               (reset! close-fn# (sut/main @port#)))]
        (try
          ~@forms
          (finally
-           (.close @server#))))))
+           (@close-fn#))))))
 
 (deftest get-status
   (with-server url _ ""
@@ -81,9 +82,9 @@
           resp (http/post (url "/retry") {:body id})
           _ (is (= 200 (:status resp)))
 
-          ;; retry is idempotent
+          ;; retry is idempotent, but returns 204 when nothing to retry
           resp (http/post (url "/retry") {:body id})
-          _ (is (= 200 (:status resp)))
+          _ (is (= 204 (:status resp)))
 
           ;; check stats
           resp (http/get (url "/stats"))
@@ -119,7 +120,12 @@
 
           ;; take fails when there is nothing to take
           resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
-          _ (is (= 204 (:status resp)))])))
+          _ (is (= 204 (:status resp)))]
+
+      ;; no garbage left in state
+      (is (= {:retries {}
+              :tasks {}}
+             @sut/state)))))
 
 (deftest add-a-few-items
   (with-server url _ ""
@@ -153,7 +159,7 @@
                            _ (is (= 200 (:status resp)))
                            id (-> resp :headers :id)
                            item (lib/json-loads (:body resp))]
-                       (assert (= item (nth items i)))
+                       (is (= item (nth items i)))
                        {:id id :item item})))
 
           ;; check stats
@@ -169,7 +175,7 @@
                             _ (is (= 200 (:status resp)))
                             id (-> resp :headers :id)
                             item (lib/json-loads (:body resp))]
-                        (assert (= item (nth items i)))
+                        (is (= item (nth items i)))
                         {:id id :item item})))
 
           ;; check stats
@@ -208,7 +214,7 @@
                             _ (is (= 200 (:status resp)))
                             id (-> resp :headers :id)
                             item (lib/json-loads (:body resp))]
-                        (assert (= item (nth items i)))
+                        (is (= item (nth items i)))
                         {:id id :item item})))
 
           ;; check stats
@@ -260,13 +266,19 @@
           ;; what came in is what came out
           _ (is (= items
                    (sort-by :work-num (map :item (concat the-more the-rest everything-else)))
-                   (sort-by :work-num (map :item (concat the-few the-more the-rest)))))])))
+                   (sort-by :work-num (map :item (concat the-few the-more the-rest)))))]
+
+      ;; no garbage left in state
+      (is (= {:retries {}
+              :tasks {}}
+             @sut/state)))))
 
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
 (deftest auto-retry-timeout
-  ;; (assert false)
-  (with-server url _ ""
+  (with-server url _ (pr-str {:server {:period-millis 50
+                                       :retry-timeout-minutes 0.001
+                                       :take-timeout-millis 50}})
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -276,67 +288,27 @@
 
           ;; take an item off the queue
           resp (http/post (url "/take?queue=queue_1"))
-          id (-> resp :headers :id)
-          _ (is (string? id))
-          _ (is (= 200 (:status resp)))
           _ (is (= item (lib/json-loads (:body resp))))
 
-          ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
-          _ (is (= 204 (:status resp)))
-
-          ;; check stats
-          resp (http/get (url "/stats"))
-          _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
-                   (lib/json-loads (:body resp))))
-
-          ;; retry the item, aka re-enqueue it
-          resp (http/post (url "/retry") {:body id})
-          _ (is (= 200 (:status resp)))
-
-          ;; retry is idempotent
-          resp (http/post (url "/retry") {:body id})
-          _ (is (= 200 (:status resp)))
-
-          ;; check stats
-          resp (http/get (url "/stats"))
-          _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
-                   (lib/json-loads (:body resp))))
-
-          ;; take the retried item
+          ;; take fails, there is nothing in the queue
           resp (http/post (url "/take?queue=queue_1"))
-          id (-> resp :headers :id)
-          _ (is (= 200 (:status resp)))
+          _ (is (= 204 (:status resp)))
+
+          ;; sleep so it gets auto retried, and re-enqueued
+          _ (Thread/sleep 100)
+
+          ;; take the same item, without every calling /retry
+          resp (http/post (url "/take?queue=queue_1"))
           _ (is (= item (lib/json-loads (:body resp))))
 
-          ;; check stats
-          resp (http/get (url "/stats"))
-          _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
-                   (lib/json-loads (:body resp))))
+          ;; take fails, there is nothing in the queue
+          resp (http/post (url "/complete") {:body (-> resp :headers :id)})
+          _ (is (= 200 (:status resp)))]
 
-          ;; complete the item, marking it as done
-          resp (http/post (url "/complete") {:body id})
-          _ (is (= 200 (:status resp)))
-
-          ;; complete 204s if that id is not completeable
-          resp (http/post (url "/complete") {:body id})
-          _ (is (= 204 (:status resp)))
-
-          ;; check stats
-          resp (http/get (url "/stats"))
-          _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
-                   (lib/json-loads (:body resp))))
-
-          ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1") {:query-params {:timeout-ms 1}})
-          _ (is (= 204 (:status resp)))
-
-
-          ])))
+      ;; no garbage left in state
+      (is (= {:retries {}
+              :tasks {}}
+             @sut/state)))))
 
 ;; TODO test with reboots. a complete will fail if taken from a
 ;; different server instance than completed to. same for retries. for
