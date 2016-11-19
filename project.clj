@@ -14,8 +14,12 @@
   :uberjar-name "spq.jar"
   :plugins [[s3-wagon-private "1.3.0-alpha2"]]
   :repositories {"snapshots" {:url ~(System/getenv "S3P_SNAPSHOTS_URL")
-                              ;; snapshots built by bin/build_libs.sh
-                              ;; export S3P_SNAPSHOTS_URL=s3p://$BUCKET/software/
+                              ;; snapshots built by bin/build_libs.sh,
+                              ;; with an env var like:
+                              ;; S3P_SNAPSHOTS_URL=s3p://$BUCKET/software/
+                              ;;
+                              ;; alternatively, install snapshots
+                              ;; locally with bin/install_libs.sh.
                               :username :env/aws_access_key_id
                               :passphrase :env/aws_secret_access_key
                               :update :never

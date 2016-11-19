@@ -1,0 +1,3 @@
+language: clojure
+install: bash bin/install_libs.sh
+script: lein test
