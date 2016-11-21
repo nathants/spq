@@ -12,9 +12,9 @@ install() {
     tmp_path=$(pwd)
     git clone https://github.com/nathants/${repo}
     cd ${repo}
-    hash=${hash:-$(git log --format=%h|head -n1)}
-    hash=$(echo $hash|head -c7)
-    sed -r -i "s:defproject ([^ ]+) .*:defproject snapshots/\1 \"master-${hash}\":" project.clj
+    latest_hash=${hash:-$(git log --format=%h|head -n1)}
+    latest_hash=$(echo $latest_hash|head -c7)
+    sed -r -i "s:defproject ([^ ]+) .*:defproject snapshots/\1 \"master-${latest_hash}\":" project.clj
     lein install
     cd /tmp
     rm -rf ${tmp_path}

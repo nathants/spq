@@ -19,10 +19,10 @@ build() {
     name=$(echo ${repo} | cut -d- -f2)
     lein jar
     lein pom
-    hash=${hash:-$(git log --format=%h|head -n1)}
-    hash=$(echo $hash|head -c7)
-    aws s3 cp pom.xml $S3_SNAPSHOTS_URL/${name}/master-${hash}/${name}-master-${hash}.pom
-    aws s3 cp target/*.jar $S3_SNAPSHOTS_URL/${name}/master-${hash}/${name}-master-${hash}.jar
+    latest_hash=${hash:-$(git log --format=%h|head -n1)}
+    latest_hash=$(echo $latest_hash|head -c7)
+    aws s3 cp pom.xml $S3_SNAPSHOTS_URL/${name}/master-${latest_hash}/${name}-master-${latest_hash}.pom
+    aws s3 cp target/*.jar $S3_SNAPSHOTS_URL/${name}/master-${latest_hash}/${name}-master-${latest_hash}.jar
     cd /tmp
     rm -rf ${tmp_path}
 }
