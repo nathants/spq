@@ -1,6 +1,7 @@
 (ns spq.server-test
   (:require [clj-http.client :as http]
             [clojure.test :refer :all]
+            [confs.core :as confs :refer [conf]]
             [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
@@ -25,6 +26,7 @@
   `(do
      (lib/run "rm -rf" lib/queue-path)
      (lib/setup-logging :short-format true)
+     (apply confs/reset! (concat (:confs ~opts) ["resources/config.edn"]))
      (let [port# (atom (rand-port))
            close-fn# (atom (apply sut/main @port# (apply concat ~opts)))
            ~route-fn #(route port# %)
@@ -283,8 +285,8 @@
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
 (deftest auto-retry-timeout-via-conf
-  (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
-                                                      :retry-timeout-minutes 0.001}})]}
+  (with-server url _ {:confs [(pr-str {:server {:period-millis 50
+                                                :retry-timeout-minutes 0.001}})]}
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue
@@ -316,9 +318,7 @@
              @sut/state)))))
 
 (deftest auto-retry-timeout-via-param
-  (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
-                                                      ;; :retry-timeout-minutes 0.001
-                                                      }})]}
+  (with-server url _ {:confs [(pr-str {:server {:period-millis 50}})]}
     (let [item {:work-num "number1"}
 
           ;; put an item on a queue

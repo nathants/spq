@@ -153,10 +153,8 @@
         (lib/shutdown)))))
 
 (defn main
-  [port & {:keys [extra-confs
-                  extra-handlers
+  [port & {:keys [extra-handlers
                   extra-middleware]}]
-  (apply confs/reset! (concat extra-confs ["resources/config.edn"]))
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
@@ -187,6 +185,7 @@
       (.close server))))
 
 (defn -main
-  [port & paths]
+  [port & confs]
   (lib/setup-logging)
-  (main (read-string port) :extra-confs paths))
+  (apply confs/reset! confs)
+  (main (read-string port)))
