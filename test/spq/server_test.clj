@@ -76,7 +76,7 @@
           _ (is (= item (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
+          resp (http/post (url "/take?queue=queue_1&timeout-millis=10"))
           _ (is (= 204 (:status resp)))
 
           ;; check stats
@@ -126,7 +126,7 @@
                    (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
-          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
+          resp (http/post (url "/take?queue=queue_1&timeout-millis=10"))
           _ (is (= 204 (:status resp)))]
 
       ;; no garbage left in state
@@ -242,7 +242,7 @@
                    (lib/json-loads (:body resp))))
 
           everything-else (loop [res []]
-                            (let [resp (http/post (url "/take?queue=queue_1&timeout-ms=50"))]
+                            (let [resp (http/post (url "/take?queue=queue_1&timeout-millis=50"))]
                               (condp = (:status resp)
                                 200 (recur (conj res {:id (-> resp :headers :id)
                                                       :item (lib/json-loads (:body resp))}))
@@ -282,7 +282,7 @@
 
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
-(deftest auto-retry-timeout
+(deftest auto-retry-timeout-via-conf
   (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
                                                       :retry-timeout-minutes 0.001}})]}
     (let [item {:work-num "number1"}
@@ -297,7 +297,41 @@
           _ (is (= item (lib/json-loads (:body resp))))
 
           ;; take fails, there is nothing in the queue
-          resp (http/post (url "/take?queue=queue_1&timeout-ms=10"))
+          resp (http/post (url "/take?queue=queue_1&timeout-millis=10"))
+          _ (is (= 204 (:status resp)))
+
+          ;; sleep so it gets auto retried, and re-enqueued
+          _ (Thread/sleep 100)
+
+          ;; take the same item, without every calling /retry
+          resp (http/post (url "/take?queue=queue_1"))
+          _ (is (= item (lib/json-loads (:body resp))))
+
+          resp (http/post (url "/complete") {:body (-> resp :headers :id)})
+          _ (is (= 200 (:status resp)))]
+
+      ;; no garbage left in state
+      (is (= {:retries {}
+              :tasks {}}
+             @sut/state)))))
+
+(deftest auto-retry-timeout-via-param
+  (with-server url _ {:extra-confs [(pr-str {:server {:period-millis 50
+                                                      ;; :retry-timeout-minutes 0.001
+                                                      }})]}
+    (let [item {:work-num "number1"}
+
+          ;; put an item on a queue
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :query-params {:queue "queue_1"}})
+          _ (is (= 200 (:status resp)))
+
+          ;; take an item off the queue
+          resp (http/post (url "/take?queue=queue_1&retry-timeout-minutes=0.001"))
+          _ (is (= item (lib/json-loads (:body resp))))
+
+          ;; take fails, there is nothing in the queue
+          resp (http/post (url "/take?queue=queue_1&timeout-millis=10"))
           _ (is (= 204 (:status resp)))
 
           ;; sleep so it gets auto retried, and re-enqueued

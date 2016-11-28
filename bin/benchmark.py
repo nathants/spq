@@ -14,7 +14,7 @@ def _take(queue_name, url, parallelism):
     start = time.time()
     def worker():
         while True:
-            resp = requests.post('%s/take?queue=%s&timeout-ms=100' % (url, queue_name))
+            resp = requests.post('%s/take?queue=%s&timeout-millis=100' % (url, queue_name))
             if resp.status_code != 200:
                 break
     procs = [pool.proc.new(worker) for _ in range(parallelism)]

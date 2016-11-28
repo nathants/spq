@@ -90,5 +90,5 @@
   (apply str (take 250 (str x))))
 
 (defn minutes-ago
-  [{:keys [time]}]
-  (-> (System/nanoTime) (- time) double (/ 1000000000.0 60.0)))
+  [nano-time]
+  (-> (System/nanoTime) (- nano-time) double (/ 1000000000.0 60.0)))
