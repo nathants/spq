@@ -27,10 +27,11 @@
                         (if-let [err (force ?err_)]
                           (str "\n" (timbre/stacktrace err))
                           "")))
-            #(let [{:keys [msg_ hostname_ timestamp_ instant level ?err_]} %]
+            #(let [{:keys [msg_ hostname_ timestamp_ instant level ?ns-str ?err_]} %]
                (println
                 (.toString (.toInstant instant))
                 level
+                (force ?ns-str)
                 (force hostname_)
                 (force msg_)
                 (if-let [err (force ?err_)]
