@@ -82,6 +82,7 @@
   (try
     @task
     (catch java.io.IOException ex
+      ;; TODO what should we actually do here? just proceed?
       (timbre/fatal ex "failed to read queued item from disk")
       (shutdown))))
 

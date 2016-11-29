@@ -78,7 +78,7 @@
                   "taken again by another caller.")})))
 
 (defn -swap-take!
-  [state task retry-timeout]
+  [state task retry-timeout-minutes]
   (loop [id (or (get-in @state [:retries task])
                 (str (hash task)))
          i 0]
@@ -86,8 +86,8 @@
                (swap! state (fn [m]
                               (assert (not (contains? m id)))
                               (assoc-in m [:tasks id] {:task task
-                                                       :time (System/nanoTime)
-                                                       :retry-timeout retry-timeout})))
+                                                       :nano-time (System/nanoTime)
+                                                       :retry-timeout-minutes retry-timeout-minutes})))
                (catch AssertionError ex
                  (timbre/debug "task-id collission, looping. count:" i id)
                  (if (> i 1000)
@@ -100,15 +100,15 @@
 (defhandler post-take
   [req]
   (let [queue-name (:queue (:params req))
-        timeout (Long/parseLong (get (:params req) :timeout-millis (str (conf :server :take-timeout-millis))))
-        retry-timeout (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
-        task (dq/take! queue queue-name timeout ::empty)]
+        timeout-millis (Long/parseLong (get (:params req) :timeout-millis (str (conf :server :take-timeout-millis))))
+        retry-timeout-minutes (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
+        task (dq/take! queue queue-name timeout-millis ::empty)]
     (if (= ::empty task)
       (do (timbre/debug "nothing to take for queue:" queue-name)
           {:status 204
            :body "no items available to take"})
       (let [item (lib/deref-task task)
-            id (-swap-take! state task retry-timeout)]
+            id (-swap-take! state task retry-timeout-minutes)]
         (timbre/debug "take!" queue-name item)
         {:status 200
          :headers {:id id}
@@ -138,8 +138,8 @@
     (try
       (let [to-retry (->> @state
                        :tasks
-                       (filter #(> (lib/minutes-ago (:time (val %)))
-                                   (get (val %) :retry-timeout))))]
+                       (filter #(> (lib/minutes-ago (:nano-time (val %)))
+                                   (get (val %) :retry-timeout-minutes))))]
         (when (seq to-retry)
           (timbre/info "period task found" (count to-retry) "tasks to retry")
           (->> to-retry (map val) (map :task) (map dq/retry!) dorun)

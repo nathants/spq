@@ -374,6 +374,15 @@
         (is (= "middle" (:body resp)))
         (is (= "out" (-> resp :headers :algo)))))))
 
+(deftest extra-middleware-short-circuit-request
+  (let [extra-middleware [(defmiddleware middle-out
+                            ([req] {:status 400 :body "sorry bud"})
+                            ([req rep] nil))]]
+    (with-server url _ {:extra-middleware extra-middleware}
+      (let [resp (http/get (url "/foo") {:throw-exceptions? false})]
+        (is (= 400 (:status resp)))
+        (is (= "sorry bud" (:body resp)))))))
+
 ;; TODO add tests for accessing queues that dont exist. seems like all good?
 
 ;; TODO test with test.check

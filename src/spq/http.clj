@@ -53,7 +53,11 @@
      (defn ~name
        [handler#]
        (fn [request#]
-         (-> request# request-fn# handler# (d/chain #(response-fn# request# %)))))))
+         (let [processed-request# (request-fn# request#)]
+           ;; if :status is defined, assume this is a response and short circuit the normal handler
+           (if (:status processed-request#)
+             processed-request#
+             (d/chain (handler# processed-request#) #(response-fn# request# %))))))))
 
 (defn start!
   [router & {:keys [port extra-middleware]}]
