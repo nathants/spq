@@ -3,7 +3,7 @@
             [clojure.test :refer :all]
             [confs.core :as confs :refer [conf]]
             [compojure
-             [core :as compojure :refer [GET POST]]
+             [core :refer [GET POST]]
              [route :as route]]
             [spq
              [lib :as lib]
