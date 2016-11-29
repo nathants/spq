@@ -366,7 +366,7 @@
                                           :body (-> req :headers :algo)}))]
         extra-middleware [(defmiddleware middle-out
                             ([req] (assoc-in req [:headers :algo] "middle"))
-                            ([rep] (assoc-in rep [:headers :algo] "out")))]]
+                            ([req rep] (assoc-in rep [:headers :algo] "out")))]]
     (with-server url _ {:extra-handlers extra-handlers
                         :extra-middleware extra-middleware}
       (let [resp (http/get (url "/foo"))]
@@ -374,9 +374,6 @@
         (is (= "middle" (:body resp)))
         (is (= "out" (-> resp :headers :algo)))))))
 
-;; TODO test with reboots. a complete will fail if taken from a
-;; different server instance than completed to. same for retries. for
-;; retries there is no difference, but for failed completes, it means
-;; the task will be reissued.
+;; TODO add tests for accessing queues that dont exist. seems like all good?
 
 ;; TODO test with test.check

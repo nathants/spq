@@ -53,7 +53,7 @@
      (defn ~name
        [handler#]
        (fn [request#]
-         (-> request# request-fn# handler# (d/chain response-fn#))))))
+         (-> request# request-fn# handler# (d/chain #(response-fn# request# %)))))))
 
 (defn start!
   [router & {:keys [port extra-middleware]}]
