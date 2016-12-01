@@ -1,7 +1,6 @@
 (ns spq.server
   (:gen-class)
-  (:require [clojure.pprint :as pprint]
-            [compojure
+  (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
             [confs.core :as confs :refer [conf]]
@@ -51,12 +50,7 @@
           (timbre/debug "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
-      {:status 204
-       :body (str "no such task to complete with id: " id
-                  ". either it has already been completed, "
-                  "or the server crashed and it will be "
-                  "be retried anyway because it was never "
-                  "completed.")})))
+      {:status 204})))
 
 (defhandler post-complete
   [req]
@@ -71,11 +65,7 @@
           (timbre/debug "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
-      {:status 204
-       :body (str "no such task to complete with id: " id
-                  ". either it has already been completed, "
-                  "or the server crashed and it will be "
-                  "taken again by another caller.")})))
+      {:status 204})))
 
 (defn -swap-take!
   [state task retry-timeout-minutes]
@@ -104,9 +94,8 @@
         retry-timeout-minutes (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
         task (dq/take! queue queue-name timeout-millis ::empty)]
     (if (= ::empty task)
-      (do (timbre/debug "nothing to take for queue:" queue-name)
-          {:status 204
-           :body "no items available to take"})
+      (do (timbre/debug "take! nothing to take for queue:" queue-name)
+          {:status 204})
       (let [item (lib/deref-task task)
             id (-swap-take! state task retry-timeout-minutes)]
         (timbre/debug "take!" queue-name item)
@@ -158,7 +147,6 @@
   (def queue (lib/open-queue))
   (def state (atom {:retries {}
                     :tasks {}}))
-  (timbre/info (str "conf:\n" (with-out-str (pprint/pprint confs/*conf*))))
   ;; TODO we should probably monitor the periodic task via a binary
   ;; sibling process, health checking each other, either kills parent
   ;; pid of fail to check in.

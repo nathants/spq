@@ -7,7 +7,7 @@
             [taoensso.timbre :as timbre]))
 
 (def *kill* (doto (not= \n (first (System/getenv "KILL")))
-              (->> (println "*kill*"))))
+              (->> (println "kill:"))))
 
 (defn run [& args]
   (let [cmd (apply str (interpose " " args))
