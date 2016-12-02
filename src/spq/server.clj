@@ -123,23 +123,24 @@
 
 (defn periodic-task
   [stop-periodic-task]
-  (when-not @stop-periodic-task
-    (try
-      (let [to-retry (->> @state
-                       :tasks
-                       (filter #(> (lib/minutes-ago (:nano-time (val %)))
-                                   (get (val %) :retry-timeout-minutes))))]
-        (when (seq to-retry)
-          (timbre/info "period task found" (count to-retry) "tasks to retry")
-          (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
-          (swap! state #(reduce (fn [% [id {:keys [task]}]]
-                                  (-swap-retry % id task))
-                                %
-                                to-retry))))
-      (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
-      (catch Throwable ex
-        (timbre/fatal ex "error in period task")
-        (lib/shutdown)))))
+  (future
+    (when-not @stop-periodic-task
+      (try
+        (let [to-retry (->> @state
+                         :tasks
+                         (filter #(> (lib/minutes-ago (:nano-time (val %)))
+                                     (get (val %) :retry-timeout-minutes))))]
+          (when (seq to-retry)
+            (timbre/info "period task found" (count to-retry) "tasks to retry")
+            (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
+            (swap! state #(reduce (fn [% [id {:keys [task]}]]
+                                    (-swap-retry % id task))
+                                  %
+                                  to-retry))))
+        (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
+        (catch Throwable ex
+          (timbre/fatal ex "error in period task")
+          (lib/shutdown))))))
 
 (defn main
   [port & {:keys [extra-handlers
@@ -168,7 +169,7 @@
                  (concat extra-handlers [(route/not-found "No such page.")])
                  (http/start! :port port :extra-middleware extra-middleware))]
     (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
-    (fn close-fn []
+    (fn stop-fn []
       (reset! stop-periodic-task true)
       (.close server))))
 
