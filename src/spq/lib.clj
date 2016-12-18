@@ -67,7 +67,7 @@
   [x]
   (json/parse-string x true))
 
-(def queue-path (str (System/getProperty "user.home") "/public-queue"))
+(def queue-path (str (System/getProperty "user.home") "/queue-data"))
 
 (defn open-queue
   []

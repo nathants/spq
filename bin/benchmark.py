@@ -45,7 +45,7 @@ def main(url: 'spq url, http://localhost:8080 or something',
          seconds: 'number of seconds to furiously /put data' = 10,
          parallelism: 'number of workers to /put and /take from' = 10):
     """
-    start spq with something like: lein trampoline run -m spq.server/-main 8080
+    start spq with something like: lein trampoline run -m spq.server/-main 8080 resources/config.edn
     """
     queue_name = ('benchmark_%s' % uuid.uuid4()).replace('-', '_')
     res = _put(queue_name, url, seconds, parallelism)
