@@ -39,11 +39,12 @@
          s/take!
          (d/on-realized
           (fn [rep#] (let [[req#] ~args]
-                       (timbre/info (or (:status rep#) 500)
-                                    (str/upper-case (name (:request-method req#)))
-                                    (str (:uri req#) "?" (:query-string req#))
-                                    (format "%.2f%s" (/ (double (- (System/nanoTime) start#)) 1000000.0) "ms")
-                                    (:remote-addr req#))))
+                       (when (:remote-addr req#)
+                         (timbre/info (or (:status rep#) 500)
+                                      (str/upper-case (name (:request-method req#)))
+                                      (str (:uri req#) "?" (:query-string req#))
+                                      (format "%.2f%s" (/ (double (- (System/nanoTime) start#)) 1000000.0) "ms")
+                                      (:remote-addr req#)))))
           (fn [rep#] (timbre/error "deferred" '~-name "failed with" (first ~args) rep#)))))))
 
 (defmacro defmiddleware
