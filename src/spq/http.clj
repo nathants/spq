@@ -28,24 +28,14 @@
   [-name args & forms]
   `(defn ~-name
      ~args
-     (let [start# (System/nanoTime)]
-       (-> (let [~args [(-body-to-string (first ~args))]]
-             ~@forms)
-         (try (catch Throwable ex#
-                (timbre/error ex# "handler" '~-name "failed with" (first ~args))
-                (throw ex#)))
-         a/go
-         s/->source
-         s/take!
-         (d/on-realized
-          (fn [rep#] (let [[req#] ~args]
-                       (when (:remote-addr req#)
-                         (timbre/info (or (:status rep#) 500)
-                                      (str/upper-case (name (:request-method req#)))
-                                      (str (:uri req#) "?" (:query-string req#))
-                                      (format "%.2f%s" (/ (double (- (System/nanoTime) start#)) 1000000.0) "ms")
-                                      (:remote-addr req#)))))
-          (fn [rep#] (timbre/error "deferred" '~-name "failed with" (first ~args) rep#)))))))
+     (-> (let [~args [(-body-to-string (first ~args))]]
+           ~@forms)
+       (try (catch Throwable ex#
+              (timbre/error ex# "handler" '~-name "failed with" (first ~args))
+              (throw ex#)))
+       a/go
+       s/->source
+       s/take!)))
 
 (defmacro defmiddleware
   [name request-form response-form]
@@ -58,7 +48,20 @@
            ;; if :status is defined, assume this is a response and short circuit the normal handler
            (if (:status processed-request#)
              processed-request#
-             (d/chain (handler# processed-request#) #(response-fn# request# %))))))))
+             (d/chain (handler# processed-request#) #(response-fn# processed-request# %))))))))
+
+(defmiddleware logging
+  ([req]
+   (assoc req :start-time (System/nanoTime)))
+  ([req rep]
+   (when (:remote-addr req)
+     (timbre/info
+      (or (:status rep) 500)
+      (str/upper-case (name (:request-method req)))
+      (str (:uri req) "?" (:query-string req))
+      (format "%.2f%s" (/ (double (- (System/nanoTime) (:start-time req))) 1000000.0) "ms")
+      (:remote-addr req)))
+   rep))
 
 (defn start!
   [router & {:keys [port extra-middleware]}]
@@ -67,5 +70,6 @@
            (apply compojure/routes router)
            (concat extra-middleware
                    [keyword-params/wrap-keyword-params
-                    params/wrap-params]))
+                    params/wrap-params
+                    logging]))
    {:port port}))
