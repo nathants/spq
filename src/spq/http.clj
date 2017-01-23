@@ -20,22 +20,22 @@
 
 (defn -body-to-string
   [x]
-  (->> (if-let [body (:body x)]
-         (bs/to-string body))
-    (assoc x :body)))
+  (assoc x :body (if-let [body (:body x)]
+                   (bs/to-string body))))
 
 (defmacro defhandler
   [-name args & forms]
   `(defn ~-name
      ~args
-     (-> (let [~args [(-body-to-string (first ~args))]]
-           ~@forms)
-       (try (catch Throwable ex#
-              (timbre/error ex# "handler" '~-name "failed with" (first ~args))
-              (throw ex#)))
-       a/go
-       s/->source
-       s/take!)))
+     (s/take!
+      (s/->source
+       (a/go
+         (try
+           (let [~args [(-body-to-string (first ~args))]]
+             ~@forms)
+           (catch Throwable ex#
+             (timbre/error ex# "handler" '~-name "failed with" (first ~args))
+             (throw ex#))))))))
 
 (defmacro defmiddleware
   [name request-form response-form]

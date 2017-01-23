@@ -15,7 +15,7 @@
 
 (defn rand-port
   []
-  (+ 1000 (rand-int 10000)))
+  (+ 1000 (rand-int 5000)))
 
 (defn route
   [port url]
@@ -24,17 +24,31 @@
 (defmacro with-server
   [route-fn reboot-server-fn opts & forms]
   `(do
-     (lib/run "rm -rf" lib/queue-path)
+     (lib/run "rm -rf" lib/queue-path) ;; TODO use a tempdir here instead of lib/queue-path
      (lib/setup-logging :short-format true)
      (apply confs/reset! (concat (:confs ~opts) ["resources/config.edn"]))
-     (let [port# (atom (rand-port))
-           close-fn# (atom (apply sut/main @port# (apply concat ~opts)))
+     (let [
+           port# (atom nil)
+           close-fn# (atom nil)
            ~route-fn #(route port# %)
-           ~reboot-server-fn
-           (fn []
-             (@close-fn#)
-             (reset! port# (rand-port))
-             (reset! close-fn# (apply sut/main @port# (apply concat ~opts))))]
+           start-fn# #(do (loop [i# 0]
+                            (assert (< i# 50))
+                            (when (= ::fail (try
+                                              (reset! port# (rand-port))
+                                              (reset! close-fn# (apply sut/main @port# (apply concat ~opts)))
+                                              (catch java.net.SocketException _# ::fail)
+                                              (catch java.net.BindException   _# ::fail)))
+                              (recur (inc i#))))
+                          (loop [j# 0]
+                            (assert (< j# 50))
+                            (when (= ::fail (try
+                                              (http/get (~route-fn "/status"))
+                                              (catch Throwable _# ::fail)))
+                              (recur (inc j#)))))
+           ~reboot-server-fn (fn []
+                               (@close-fn#)
+                               (start-fn#))]
+       (start-fn#)
        (try
          ~@forms
          (finally
@@ -58,6 +72,8 @@
 (deftest kitchen-sink
   (with-server url _ {}
     (let [item {:work-num "number1"}
+
+          ;; TODO stop hard coding queue_1
 
           ;; put an item on a queue
           resp (http/post (url "/put") {:body (lib/json-dumps item)
@@ -376,13 +392,10 @@
 
 (deftest extra-middleware-short-circuit-request
   (let [extra-middleware [(defmiddleware middle-out
-                            ([req] {:status 400 :body "sorry bud"})
-                            ([req rep] nil))]]
+                            ([req] {:status 200 :body "sorry bud"})
+                            ([req rep] rep))]]
     (with-server url _ {:extra-middleware extra-middleware}
-      (let [resp (http/get (url "/foo") {:throw-exceptions? false})]
-        (is (= 400 (:status resp)))
+      (let [resp (http/get (url "/foo"))]
         (is (= "sorry bud" (:body resp)))))))
 
 ;; TODO add tests for accessing queues that dont exist. seems like all good?
-
-;; TODO test with test.check

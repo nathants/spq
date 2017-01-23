@@ -10,7 +10,8 @@
                  [aleph "0.4.1"]
                  [compojure "1.6.0-beta3"]
                  [cheshire "5.6.3"]
-                 [snapshots/confs "master-a8ee32c"]]
+                 [snapshots/confs "master-a8ee32c"]
+                 [org.clojure/test.check "0.9.0"]]
   :uberjar-name "spq.jar"
   :plugins [[s3-wagon-private "1.3.0-alpha2"]]
   :repositories {"snapshots" {:url ~(System/getenv "S3P_SNAPSHOTS_URL")
