@@ -83,7 +83,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 1 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take an item off the queue
@@ -100,7 +100,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
+          _ (is (= {:queue_1 {:queued 1 :active 1}}
                    (lib/json-loads (:body resp))))
 
           ;; retry the item, aka re-enqueue it
@@ -114,7 +114,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 1 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take the retried item
@@ -126,7 +126,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 1 :num-active 1}}
+          _ (is (= {:queue_1 {:queued 1 :active 1}}
                    (lib/json-loads (:body resp))))
 
           ;; complete the item, marking it as done
@@ -140,7 +140,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 0 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take fails when there is nothing to take
@@ -172,7 +172,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 10 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 10 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take the few
@@ -188,7 +188,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 10 :num-active 4}}
+          _ (is (= {:queue_1 {:queued 10 :active 4}}
                    (lib/json-loads (:body resp))))
 
           ;; take the more
@@ -204,7 +204,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 10 :num-active 8}}
+          _ (is (= {:queue_1 {:queued 10 :active 8}}
                    (lib/json-loads (:body resp))))
 
 
@@ -216,7 +216,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 10 :num-active 4}}
+          _ (is (= {:queue_1 {:queued 10 :active 4}}
                    (lib/json-loads (:body resp))))
 
           ;; complete the the-more
@@ -227,7 +227,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 6 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 6 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; take the rest, which should be the few which were all retried instead of completed
@@ -243,7 +243,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 6 :num-active 2}}
+          _ (is (= {:queue_1 {:queued 6 :active 2}}
                    (lib/json-loads (:body resp))))
 
           ;; complete the rest
@@ -254,7 +254,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 4 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 4 :active 0}}
                    (lib/json-loads (:body resp))))
 
           everything-else (loop [res []]
@@ -270,7 +270,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 4 :num-active 4}}
+          _ (is (= {:queue_1 {:queued 4 :active 4}}
                    (lib/json-loads (:body resp))))
 
           ;; complete everything else
@@ -281,7 +281,7 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:num-queued 0 :num-active 0}}
+          _ (is (= {:queue_1 {:queued 0 :active 0}}
                    (lib/json-loads (:body resp))))
 
           ;; the retries of the-few put them back at the end of the queue

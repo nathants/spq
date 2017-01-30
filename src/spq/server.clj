@@ -107,8 +107,8 @@
   {:status 200
    :body (->> queue
            dq/stats
-           (reduce-kv #(assoc %1 %2 {:num-queued (- (:enqueued %3) (:completed %3))
-                                     :num-active (:in-progress %3)})
+           (reduce-kv #(assoc %1 %2 {:queued (- (:enqueued %3) (:completed %3))
+                                     :active (:in-progress %3)})
                       {})
            lib/json-dumps)})
 
