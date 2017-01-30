@@ -148,9 +148,7 @@
           _ (is (= 204 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {:retries {}
-              :tasks {}}
-             @sut/state)))))
+      (is (= {} @sut/state)))))
 
 (deftest add-a-few-items
   (with-server url _ {}
@@ -265,7 +263,9 @@
                                 200 (recur (conj res {:id (-> resp :headers :id)
                                                       :item (lib/json-loads (:body resp))}))
                                 204 res)))
-          _ (is (= everything-else the-few))
+
+          _ (is (= (map :item everything-else)
+                   (map :item the-few)))
 
           ;; check stats
           resp (http/get (url "/stats"))
@@ -294,9 +294,7 @@
                    (sort-by :work-num (map :item (concat the-few the-more the-rest)))))]
 
       ;; no garbage left in state
-      (is (= {:retries {}
-              :tasks {}}
-             @sut/state)))))
+      (is (= {} @sut/state)))))
 
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
@@ -329,9 +327,7 @@
           _ (is (= 200 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {:retries {}
-              :tasks {}}
-             @sut/state)))))
+      (is (= {} @sut/state)))))
 
 (deftest auto-retry-timeout-via-param
   (with-server url _ {:confs [(pr-str {:server {:period-millis 50}})]}
@@ -361,9 +357,7 @@
           _ (is (= 200 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {:retries {}
-              :tasks {}}
-             @sut/state)))))
+      (is (= {} @sut/state)))))
 
 (deftest extra-handlers
   (let [extra-handlers [(GET "/foo" [] (defhandler foo

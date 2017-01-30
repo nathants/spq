@@ -9,6 +9,8 @@
              [lib :as lib]
              [server-test :refer [with-server]]]))
 
+;; TODO integrate the auto-retry timeouts into this model
+
 (defn actual
   [ops]
   (with-server url _ {}
