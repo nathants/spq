@@ -69,6 +69,47 @@
           resp (http/post (url "/status") opts)]
       (is (= opts (lib/json-loads (:body resp)))))))
 
+(deftest put-stats
+  (with-server url _ {}
+    (let [item {:work-num "number1"}
+          _ (dotimes [n 5]
+              (is (= 200 (:status (http/post (url "/put") {:body (lib/json-dumps item) :query-params {:queue "queue_1"}})))))
+          _ (Thread/sleep 1000)
+          _ (dotimes [n 5]
+              (is (= 200 (:status (http/post (url "/put") {:body (lib/json-dumps item) :query-params {:queue "queue_1"}})))))
+          resp (http/get (url "/stats"))]
+      (is (= 200 (:status resp)))
+      (is (= {:queue_1 {:queued 10
+                        :active 0
+                        :puts/sec 5
+                        :completes/sec 0}}
+             (lib/json-loads (:body resp)))))))
+
+(deftest complete-stats
+  (with-server url _ {}
+    (let [item {:work-num "number1"}
+          _ (doseq [n (range 10)]
+              (is (= 200 (:status (http/post (url "/put") {:body (lib/json-dumps item) :query-params {:queue "queue_1"}})))))
+          ids (vec
+               (for [n (range 10)]
+                 (let [resp (http/post (url "/take") {:query-params {:queue "queue_1"}})]
+                   (is (= 200 (:status resp)))
+                   (:id (:headers resp)))))
+          _ (doseq [id (take 5 ids)]
+              (let [resp (http/post (url "/complete") {:body id})]
+                (is (= 200 (:status resp)))))
+          _ (Thread/sleep 1000)
+          _ (doseq [id (drop 5 ids)]
+              (let [resp (http/post (url "/complete") {:body id})]
+                (is (= 200 (:status resp)))))
+          resp (http/get (url "/stats"))]
+      (is (= 200 (:status resp)))
+      (is (= {:queue_1 {:queued 0
+                        :active 0
+                        :puts/sec 0
+                        :completes/sec 5}}
+             (lib/json-loads (:body resp)))))))
+
 (deftest kitchen-sink
   (with-server url _ {}
     (let [item {:work-num "number1"}
@@ -83,8 +124,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 1 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 1 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take an item off the queue
           resp (http/post (url "/take?queue=queue_1"))
@@ -100,8 +141,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 1 :active 1}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 1 :active 1}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; retry the item, aka re-enqueue it
           resp (http/post (url "/retry") {:body id})
@@ -114,8 +155,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 1 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 1 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take the retried item
           resp (http/post (url "/take?queue=queue_1"))
@@ -126,8 +167,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 1 :active 1}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 1 :active 1}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; complete the item, marking it as done
           resp (http/post (url "/complete") {:body id})
@@ -140,15 +181,15 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 0 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 0 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take fails when there is nothing to take
           resp (http/post (url "/take?queue=queue_1&timeout-millis=10"))
           _ (is (= 204 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {} @sut/state)))))
+      (is (= {} (:tasks @sut/state))))))
 
 (deftest add-a-few-items
   (with-server url _ {}
@@ -159,10 +200,6 @@
           more-i [4 5 6 7]
           rest-i [8 9]
 
-          ;; check stats
-          resp (http/get (url "/stats"))
-          _ (is (= 200 (:status resp)))
-
           _ (doseq [item items]
               (let [resp (http/post (url "/put") {:body (lib/json-dumps item)
                                                   :query-params {:queue "queue_1"}})
@@ -172,8 +209,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 10 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 10 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take the few
           the-few (vec
@@ -188,8 +225,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 10 :active 4}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 10 :active 4}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take the more
           the-more (vec
@@ -204,8 +241,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 10 :active 8}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 10 :active 8}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
 
           ;; retry the the-few
@@ -216,8 +253,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 10 :active 4}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 10 :active 4}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; complete the the-more
           _ (doseq [{:keys [id]} the-more]
@@ -227,8 +264,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 6 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 6 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; take the rest, which should be the few which were all retried instead of completed
           the-rest (vec
@@ -243,8 +280,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 6 :active 2}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 6 :active 2}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; complete the rest
           _ (doseq [{:keys [id]} the-rest]
@@ -254,8 +291,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 4 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 4 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           everything-else (loop [res []]
                             (let [resp (http/post (url "/take?queue=queue_1&timeout-millis=50"))]
@@ -270,8 +307,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 4 :active 4}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 4 :active 4}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; complete everything else
           _ (doseq [{:keys [id]} everything-else]
@@ -281,8 +318,8 @@
           ;; check stats
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
-          _ (is (= {:queue_1 {:queued 0 :active 0}}
-                   (lib/json-loads (:body resp))))
+          _ (is (= {:queued 0 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
           ;; the retries of the-few put them back at the end of the queue
           _ (is (= (concat (drop 4 items) (take 4 items))
@@ -294,7 +331,7 @@
                    (sort-by :work-num (map :item (concat the-few the-more the-rest)))))]
 
       ;; no garbage left in state
-      (is (= {} @sut/state)))))
+      (is (= {} (:tasks @sut/state))))))
 
 ;; TODO implement retries with aleph.time/in or aleph.time/every
 
@@ -327,7 +364,7 @@
           _ (is (= 200 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {} @sut/state)))))
+      (is (= {} (:tasks @sut/state))))))
 
 (deftest auto-retry-timeout-via-param
   (with-server url _ {:confs [(pr-str {:server {:period-millis 50}})]}
@@ -357,7 +394,7 @@
           _ (is (= 200 (:status resp)))]
 
       ;; no garbage left in state
-      (is (= {} @sut/state)))))
+      (is (= {} (:tasks @sut/state))))))
 
 (deftest extra-handlers
   (let [extra-handlers [(GET "/foo" [] (defhandler foo

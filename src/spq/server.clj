@@ -38,37 +38,47 @@
 (defhandler post-retry
   [req]
   (let [id (:body req)]
-    (if-let [task (get-in @state [id :task])]
+    (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/retry! task)
-          (swap! state dissoc id)
+          (swap! state update-in [:tasks] dissoc id)
           (timbre/debug "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204})))
 
+(defn -update-stats
+  [stats]
+  (let [[stats size] (if (nil? stats)
+                       [[] 0]
+                       [stats (count stats)])]
+    (subvec (conj stats (System/nanoTime)) 0 (inc (min size 2000)))))
+
 (defhandler post-complete
   [req]
   (let [id (:body req)]
-    (if-let [task (get-in @state [id :task])]
+    (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/complete! task)
           ;; TODO we could potentially delay dissocs, and batch them
           ;; up to reduce swap contention. does it even matter?
-          (swap! state dissoc id)
+          (swap! state #(-> %
+                          (update-in [:tasks] dissoc id)
+                          (update-in [:stats (get-in % [:tasks id :queue-name]) :completes] -update-stats)))
           (timbre/debug "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
       {:status 204})))
 
 (defn -swap-take!
-  [state task retry-timeout-minutes]
+  [state task queue-name retry-timeout-minutes]
   (loop [id (str (hash (Object.)))
          i 0]
     (condp = (try
-               (swap! state (fn [m]
-                              (assert (not (contains? m id)))
-                              (assoc m id {:task task
-                                           :nano-time (System/nanoTime)
-                                           :retry-timeout-minutes retry-timeout-minutes})))
+               (swap! state (fn [s]
+                              (assert (not (contains? (:tasks s) id)))
+                              (assoc-in s [:tasks id] {:task task
+                                                       :nano-time (System/nanoTime)
+                                                       :queue-name queue-name
+                                                       :retry-timeout-minutes retry-timeout-minutes})))
                (catch AssertionError ex
                  (timbre/debug "task-id collission, looping. count:" i id)
                  (if (> i 1000)
@@ -88,7 +98,7 @@
       (do (timbre/debug "take! nothing to take for queue:" queue-name)
           {:status 204})
       (let [item (lib/deref-task task)
-            id (-swap-take! state task retry-timeout-minutes)]
+            id (-swap-take! state task queue-name retry-timeout-minutes)]
         (timbre/debug "take!" queue-name item)
         {:status 200
          :headers {:id id}
@@ -99,6 +109,7 @@
   (let [queue-name (:queue (:params req))
         item (lib/json-loads (:body req))]
     (dq/put! queue queue-name item)
+    (swap! state update-in [:stats queue-name :puts] -update-stats)
     (timbre/debug "put!" queue-name item)
     {:status 200}))
 
@@ -107,9 +118,19 @@
   {:status 200
    :body (->> queue
            dq/stats
-           (reduce-kv #(assoc %1 %2 {:queued (- (:enqueued %3) (:completed %3))
-                                     :active (:in-progress %3)})
-                      {})
+           (reduce-kv
+            (let [now (System/nanoTime)
+                  s @state]
+              (fn [m k v]
+                (assoc m k
+                       {:queued (- (:enqueued v) (:completed v))
+                        :active (:in-progress v)
+                        :puts/sec
+                        (count (drop-while #(> (- now %) 1e9) (get-in s [:stats k :puts])))
+                        :completes/sec
+                        (count (drop-while #(> (- now %) 1e9) (get-in s [:stats k :completes])))
+                        })))
+            {})
            lib/json-dumps)})
 
 (defn periodic-task
@@ -118,12 +139,16 @@
     (when-not @stop-periodic-task
       (try
         (let [to-retry (->> @state
+                         :tasks
                          (filter #(> (lib/minutes-ago (:nano-time (val %)))
                                      (get (val %) :retry-timeout-minutes))))]
           (when (seq to-retry)
             (timbre/info "period task found" (count to-retry) "tasks to retry")
             (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
-            (swap! state #(reduce dissoc % (keys to-retry)))))
+            (swap! state #(reduce (fn [s id]
+                                    (update-in s [:tasks] dissoc id))
+                                  %
+                                  (keys to-retry)))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
           (timbre/fatal ex "error in period task")
@@ -133,7 +158,8 @@
   [port & {:keys [extra-handlers
                   extra-middleware]}]
   (def queue (lib/open-queue))
-  (def state (atom {}))
+  (def state (atom {:tasks {}
+                    :stats {}}))
   ;; TODO we should probably monitor the periodic task via a binary
   ;; sibling process, health checking each other, either kills parent
   ;; pid of fail to check in.
