@@ -1,5 +1,6 @@
 (ns spq.lib
   (:require [cheshire.core :as json]
+            [clojure.stacktrace :as st]
             [clojure.core.async :as a]
             [clojure.java.shell :as sh]
             [confs.core :as confs :refer [conf]]
@@ -20,22 +21,36 @@
   (timbre/merge-config!
    {:appenders
     {:println
-     {:fn (if short-format
-            #(let [{:keys [msg_ ?err_]} %]
-               (println (force msg_)
-                        (if-let [err (force ?err_)]
-                          (str "\n" (timbre/stacktrace err))
-                          "")))
-            #(let [{:keys [msg_ hostname_ timestamp_ instant level ?ns-str ?err_]} %]
-               (println
-                (.toString (.toInstant instant))
-                level
-                (force ?ns-str)
-                (force hostname_)
-                (force msg_)
-                (if-let [err (force ?err_)]
-                  (str "\n" (timbre/stacktrace err))
-                  ""))))}}}))
+     {:fn (let [atomic-print (fn [x]
+                               (print x)
+                               (flush))]
+            (if short-format
+              #(let [{:keys [msg_ ?err_]} %]
+                 (atomic-print
+                  (str
+                   (force msg_)
+                   " "
+                   (if-let [err (force ?err_)]
+                     (str "\n" (st/print-stack-trace err))
+                     "")
+                   "\n")))
+              #(let [{:keys [msg_ hostname_ timestamp_ instant level ?ns-str ?err_]} %]
+                 (atomic-print
+                  (str
+                   (.toString (.toInstant instant))
+                   " "
+                   level
+                   " "
+                   (force ?ns-str)
+                   " "
+                   (force hostname_)
+                   " "
+                   (force msg_)
+                   " "
+                   (if-let [err (force ?err_)]
+                     (str "\n" (st/print-stack-trace err))
+                     "")
+                   "\n")))))}}}))
 
 (defn shutdown
   []
