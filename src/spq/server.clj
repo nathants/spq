@@ -144,8 +144,8 @@
                                      (get (val %) :retry-timeout-minutes))))]
           (when (seq to-retry)
             (timbre/info "periodic task found" (count to-retry) "tasks to retry")
-            (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
-            (doseq [id (keys to-retry)]
+            (doseq [[id val] to-retry]
+              (dq/retry! (:task val))
               (swap! state update-in [:tasks] dissoc id))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
