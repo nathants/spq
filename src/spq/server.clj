@@ -81,7 +81,7 @@
                                                        :retry-timeout-minutes retry-timeout-minutes})))
                (catch AssertionError ex
                  (timbre/debug "task-id collission, looping. count:" i id)
-                 (if (> i 1000)
+                 (when (> i 1000)
                    (timbre/fatal "failed to find unique id for task, this should never happen")
                    (lib/shutdown))
                  ::fail))
