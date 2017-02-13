@@ -20,8 +20,7 @@
   (timbre/merge-config!
    {:appenders
     {:println
-     {:async? true
-      :fn (if short-format
+     {:fn (if short-format
             #(let [{:keys [msg_ ?err_]} %]
                (println (force msg_)
                         (if-let [err (force ?err_)]
@@ -47,17 +46,6 @@
     (System/exit 0) ;; soft kill
     (run "ps h -o ppid $$|xargs sudo kill -9") ;;  hard kill
     nil))
-
-(defmacro go-supervised
-  [name & forms]
-  `(a/go
-     (try
-       ~@forms
-       (catch Throwable e#
-         (timbre/error e# "supervised go-block excepted:" ~name)
-         (when *kill*
-           (timbre/error "going to exit because supervised go-block" ~name "excepted and *kill* was set")
-           (shutdown))))))
 
 (defn json-dumps
   [x]

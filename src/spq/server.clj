@@ -143,12 +143,10 @@
                          (filter #(> (lib/minutes-ago (:nano-time (val %)))
                                      (get (val %) :retry-timeout-minutes))))]
           (when (seq to-retry)
-            (timbre/info "period task found" (count to-retry) "tasks to retry")
+            (timbre/info "periodic task found" (count to-retry) "tasks to retry")
             (->> to-retry (map val) (map :task) (map dq/retry!) dorun)
-            (swap! state #(reduce (fn [s id]
-                                    (update-in s [:tasks] dissoc id))
-                                  %
-                                  (keys to-retry)))))
+            (doseq [id (keys to-retry)]
+              (swap! state update-in [:tasks] dissoc id))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
           (timbre/fatal ex "error in period task")
