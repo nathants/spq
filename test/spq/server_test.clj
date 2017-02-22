@@ -74,15 +74,15 @@
     (let [item {:work-num "number1"}
           _ (dotimes [n 5]
               (is (= 200 (:status (http/post (url "/put") {:body (lib/json-dumps item) :query-params {:queue "queue_1"}})))))
-          _ (Thread/sleep 1000)
+          _ (Thread/sleep 5000)
           _ (dotimes [n 5]
               (is (= 200 (:status (http/post (url "/put") {:body (lib/json-dumps item) :query-params {:queue "queue_1"}})))))
           resp (http/get (url "/stats"))]
       (is (= 200 (:status resp)))
       (is (= {:queue_1 {:queued 10
                         :active 0
-                        :puts/sec 5
-                        :completes/sec 0}}
+                        :puts/sec 1.0
+                        :completes/sec 0.0}}
              (lib/json-loads (:body resp)))))))
 
 (deftest complete-stats
@@ -98,7 +98,7 @@
           _ (doseq [id (take 5 ids)]
               (let [resp (http/post (url "/complete") {:body id})]
                 (is (= 200 (:status resp)))))
-          _ (Thread/sleep 1000)
+          _ (Thread/sleep 5000)
           _ (doseq [id (drop 5 ids)]
               (let [resp (http/post (url "/complete") {:body id})]
                 (is (= 200 (:status resp)))))
@@ -106,8 +106,8 @@
       (is (= 200 (:status resp)))
       (is (= {:queue_1 {:queued 0
                         :active 0
-                        :puts/sec 0
-                        :completes/sec 5}}
+                        :puts/sec 0.0
+                        :completes/sec 1.0}}
              (lib/json-loads (:body resp)))))))
 
 (deftest kitchen-sink
