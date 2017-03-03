@@ -51,7 +51,8 @@
   (let [[stats size] (if (nil? stats)
                        [[] 0]
                        [stats (count stats)])]
-    (subvec (conj stats (System/nanoTime)) 0 (inc (min size 5000)))))
+    (subvec (conj stats (System/nanoTime))
+            (max 0 (inc (- size (conf :stats :count)))))))
 
 (defhandler post-complete
   [req]
@@ -125,8 +126,8 @@
                 (assoc m k
                        {:queued (- (:enqueued v) (:completed v))
                         :active (:in-progress v)
-                        :puts/sec (double (/ (count (drop-while #(> (- now %) 5e9) (get-in s [:stats k :puts]))) 5))
-                        :completes/sec (double (/ (count (drop-while #(> (- now %) 5e9) (get-in s [:stats k :completes]))) 5))})))
+                        :puts/sec      (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :puts])))      (conf :stats :window-seconds)))
+                        :completes/sec (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :completes]))) (conf :stats :window-seconds)))})))
             {})
            lib/json-dumps)})
 

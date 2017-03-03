@@ -85,6 +85,25 @@
                         :completes/sec 0.0}}
              (lib/json-loads (:body resp)))))))
 
+(deftest put-stats-stats-slicing
+  (with-server url _ {:confs [(pr-str {:stats {:count 10
+                                               :window-seconds 1}})]}
+    (let [item (lib/json-dumps {:work-num "number1"})
+          start (System/nanoTime)
+          resp (http/get (url "/stats"))
+          _ (dotimes [n 20]
+              (is (= 200 (:status (http/post (url "/put") {:body item :query-params {:queue "queue_1"}})))))
+          _ (Thread/sleep 2000)
+          _ (dotimes [n 20]
+              (is (= 200 (:status (http/post (url "/put") {:body item :query-params {:queue "queue_1"}})))))
+          resp (http/get (url "/stats"))]
+      (is (= 200 (:status resp)))
+      (is (= {:queue_1 {:queued 40
+                        :active 0
+                        :puts/sec 10.0
+                        :completes/sec 0.0}}
+             (lib/json-loads (:body resp)))))))
+
 (deftest complete-stats
   (with-server url _ {}
     (let [item {:work-num "number1"}

@@ -9,4 +9,7 @@
           :retry-timeout-minutes 5 ;; how long to wait before automatically /retry[ing] a /take[n] item if /complete has not been called
           :take-timeout-millis 5000} ;; how long to wait before failing on a /take when queue is empty
 
+ :stats {:window-seconds 5 ;; rate/sec is averaged over the last n seconds
+         :count 5000} ;; max items to keep in window. max reported rate/sec is count/window-seconds
+
  }
