@@ -1,7 +1,6 @@
 (ns spq.http
   (:require [aleph.http :as http]
             [byte-streams :as bs]
-            [clojure.core.async :as a]
             [clojure.string :as str]
             [compojure
              [core :as compojure]
@@ -27,15 +26,8 @@
   [-name args & forms]
   `(defn ~-name
      ~args
-     (s/take!
-      (s/->source
-       (a/go
-         (try
-           (let [~args [(-body-to-string (first ~args))]]
-             ~@forms)
-           (catch Throwable ex#
-             (timbre/error ex# "handler" '~-name "failed with" (first ~args))
-             (throw ex#))))))))
+     (let [~args [(-body-to-string (first ~args))]]
+       ~@forms)))
 
 (defmacro defmiddleware
   [name request-form response-form]

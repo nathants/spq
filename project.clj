@@ -4,7 +4,6 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [com.taoensso/timbre "4.7.4"]
-                 [org.clojure/core.async "0.2.395"]
                  [factual/durable-queue "0.1.5"]
                  [clj-http "3.3.0"]
                  [aleph "0.4.1"]

@@ -1,7 +1,6 @@
 (ns spq.lib
   (:require [cheshire.core :as json]
             [clojure.stacktrace :as st]
-            [clojure.core.async :as a]
             [clojure.java.shell :as sh]
             [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
