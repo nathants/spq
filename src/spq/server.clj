@@ -124,8 +124,9 @@
                   s @state]
               (fn [m k v]
                 (assoc m k
-                       {:queued (- (:enqueued v) (:completed v))
-                        :active (:in-progress v)
+                       ;; (max 0), is this a bug upstream? can be negative? data race?
+                       {:queued (max 0 (- (:enqueued v) (:completed v)))
+                        :active (max 0 (:in-progress v))
                         :puts/sec      (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :puts])))      (conf :stats :window-seconds)))
                         :completes/sec (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :completes]))) (conf :stats :window-seconds)))})))
             {})
@@ -133,8 +134,8 @@
 
 (defn periodic-task
   [stop-periodic-task]
-  (future
-    (when-not @stop-periodic-task
+  (when-not @stop-periodic-task
+    (future
       (try
         (let [to-retry (->> @state
                          :tasks
