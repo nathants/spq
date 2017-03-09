@@ -51,8 +51,20 @@
   (let [[stats size] (if (nil? stats)
                        [[] 0]
                        [stats (count stats)])]
-    (subvec (conj stats (System/nanoTime))
-            (max 0 (inc (- size (conf :stats :count)))))))
+    ;; ring buffer, but batches up rollover so we dont call subvec
+    ;; every time. this means the consumer has to subvec is they care
+    ;; about the exact size of the buffer, so use (-get-current-stats stats).
+    (if (< size (* 1.2 (conf :stats :count)))
+      (conj stats (System/nanoTime))
+      (subvec (conj stats (System/nanoTime))
+              (max 0 (inc (- size (conf :stats :count))))))))
+
+(defn -get-current-stats
+  [v]
+  (when v
+    (let [size (count v)
+          desired-count (min size (conf :stats :count))]
+      (subvec v (max 0 (- size desired-count))))))
 
 (defhandler post-complete
   [req]
@@ -114,6 +126,15 @@
     (timbre/debug "put!" queue-name item)
     {:status 200}))
 
+(defn -rate-per-sec
+  [now s ks]
+  (let [num-events (->> ks
+                     (get-in s)
+                     -get-current-stats
+                     (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))))
+                     count)]
+    (double (/ num-events (conf :stats :window-seconds)))))
+
 (defhandler get-stats
   [req]
   {:status 200
@@ -127,8 +148,8 @@
                        ;; (max 0), is this a bug upstream? can be negative? data race?
                        {:queued (max 0 (- (:enqueued v) (:completed v)))
                         :active (max 0 (:in-progress v))
-                        :puts/sec      (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :puts])))      (conf :stats :window-seconds)))
-                        :completes/sec (double (/ (count (drop-while #(> (- now %) (* 1e9 (conf :stats :window-seconds))) (get-in s [:stats k :completes]))) (conf :stats :window-seconds)))})))
+                        :puts/sec      (-rate-per-sec now s [:stats k :puts])
+                        :completes/sec (-rate-per-sec now s [:stats k :completes])})))
             {})
            lib/json-dumps)})
 
