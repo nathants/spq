@@ -54,7 +54,7 @@
 (defn shutdown
   []
   (when *kill*
-    (timbre/fatal "shutdown. if jvm doesnt exit right after this, it should have")
+    (timbre/warn "shutdown. if jvm doesnt exit right after this, it should have")
     (Thread/sleep 1000)
     (shutdown-agents)
     (System/exit 0) ;; soft kill
