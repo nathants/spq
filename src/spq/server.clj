@@ -1,5 +1,6 @@
 (ns spq.server
   (:gen-class)
+  (:import com.fasterxml.jackson.core.JsonParseException)
   (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
@@ -103,28 +104,35 @@
 
 (defhandler post-take
   [req]
-  (let [queue-name (:queue (:params req))
-        timeout-millis (Long/parseLong (get (:params req) :timeout-millis (str (conf :server :take-timeout-millis))))
-        retry-timeout-minutes (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
-        task (dq/take! queue queue-name timeout-millis ::empty)]
-    (if (= ::empty task)
-      (do (timbre/debug "take! nothing to take for queue:" queue-name)
-          {:status 204})
-      (let [item (lib/deref-task task)
-            id (-swap-take! state task queue-name retry-timeout-minutes)]
-        (timbre/debug "take!" queue-name item)
-        {:status 200
-         :headers {:id id}
-         :body (lib/json-dumps item)}))))
+  (let [queue-name (:queue (:params req))]
+    (if (nil? queue-name)
+      {:status 400 :body "you didn't provide required query parameter ?queue=$QUEUE_NAME"}
+      (let [timeout-millis (Long/parseLong (get (:params req) :timeout-millis (str (conf :server :take-timeout-millis))))
+            retry-timeout-minutes (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
+            task (dq/take! queue queue-name timeout-millis ::empty)]
+        (if (= ::empty task)
+          (do (timbre/debug "take! nothing to take for queue:" queue-name)
+              {:status 204})
+          (let [item (lib/deref-task task)
+                id (-swap-take! state task queue-name retry-timeout-minutes)]
+            (timbre/debug "take!" queue-name item)
+            {:status 200
+             :headers {:id id}
+             :body (lib/json-dumps item)}))))))
 
 (defhandler post-put
   [req]
-  (let [queue-name (:queue (:params req))
-        item (lib/json-loads (:body req))]
-    (dq/put! queue queue-name item)
-    (swap! state update-in [:stats queue-name :puts] -update-stats)
-    (timbre/debug "put!" queue-name item)
-    {:status 200}))
+  (let [queue-name (:queue (:params req))]
+    (if (nil? queue-name)
+      {:status 400 :body "you didn't provide required query parameter ?queue=$QUEUE_NAME"}
+      (try
+        (let [item (lib/json-loads (:body req))]
+          (dq/put! queue queue-name item)
+          (swap! state update-in [:stats queue-name :puts] -update-stats)
+          (timbre/debug "put!" queue-name item)
+          {:status 200})
+        (catch JsonParseException ex
+          {:status 400 :body "you didn't post valid json in the http body"})))))
 
 (defn -rate-per-sec
   [now s ks]

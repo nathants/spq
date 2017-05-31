@@ -448,4 +448,27 @@
       (let [resp (http/get (url "/foo"))]
         (is (= "sorry bud" (:body resp)))))))
 
+(deftest missing-query-params-gets-proper-error-response
+  (with-server url _ {}
+    (let [item {:work-num "number1"}
+
+          ;; put needs queue param
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :throw-exceptions? false})
+          _ (is (= 400 (:status resp)))
+
+          ;; put needs valid json
+          resp (http/post (url "/put") {:body "not valid json"
+                                        :query-params {:queue "queue_1"}
+                                        :throw-exceptions? false})
+          _ (is (= 400 (:status resp)))
+
+          ;; take needs queue param
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :query-params {:queue "queue_1"}})
+          _ (is (= 200 (:status resp)))
+          resp (http/post (url "/take") {:body (lib/json-dumps item)
+                                         :throw-exceptions? false})
+          _ (is (= 400 (:status resp)))])))
+
 ;; TODO add tests for accessing queues that dont exist. seems like all good?
