@@ -209,7 +209,8 @@
     (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
     (fn stop-fn []
       (reset! stop-periodic-task true)
-      (.close server))))
+      (.close server)
+      (dq/fsync queue))))
 
 (defn -main
   [port & confs]
