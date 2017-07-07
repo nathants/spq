@@ -113,12 +113,16 @@
         (if (= ::empty task)
           (do (timbre/debug "take! nothing to take for queue:" queue-name)
               {:status 204})
-          (let [item (lib/deref-task task)
-                id (-swap-take! state task queue-name retry-timeout-minutes)]
-            (timbre/debug "take!" queue-name item)
-            {:status 200
-             :headers {:id id}
-             :body (lib/json-dumps item)}))))))
+          (try
+            (let [item @task
+                  id (-swap-take! state task queue-name retry-timeout-minutes)]
+              (timbre/debug "take!" queue-name item)
+              {:status 200
+               :headers {:id id}
+               :body (lib/json-dumps item)})
+            (catch java.io.IOException ex
+              (timbre/error ex "dropping item after failed to deref task from:" queue-name)
+              {:status 204})))))))
 
 (defhandler post-put
   [req]
