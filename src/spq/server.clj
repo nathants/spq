@@ -111,8 +111,7 @@
             retry-timeout-minutes (Double/parseDouble (get (:params req) :retry-timeout-minutes (str (conf :server :retry-timeout-minutes))))
             task (dq/take! queue queue-name timeout-millis ::empty)]
         (if (= ::empty task)
-          (do (timbre/debug "take! nothing to take for queue:" queue-name)
-              {:status 204})
+          {:status 204}
           (try
             (let [item @task
                   id (-swap-take! state task queue-name retry-timeout-minutes)]
