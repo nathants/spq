@@ -42,7 +42,6 @@
     (if-let [task (get-in @state [:tasks id :task])]
       (do (dq/retry! task)
           (swap! state update-in [:tasks] dissoc id)
-          (timbre/debug "retry!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "marked retry for task with id: " id)})
       {:status 204})))
@@ -77,7 +76,6 @@
           (swap! state #(-> %
                           (update-in [:tasks] dissoc id)
                           (update-in [:stats (get-in % [:tasks id :queue-name]) :completes] -update-stats)))
-          (timbre/debug "complete!" id (lib/abbreviate (lib/deref-task task)))
           {:status 200
            :body (str "completed for task with id: " id)})
       {:status 204})))
@@ -92,9 +90,9 @@
                               (assoc-in s [:tasks id] {:task task
                                                        :nano-time (System/nanoTime)
                                                        :queue-name queue-name
-                                                       :retry-timeout-minutes retry-timeout-minutes})))
+                                                       :retry-timeout-minutes retry-timeout-minutes
+                                                       :retries 0})))
                (catch AssertionError ex
-                 (timbre/debug "task-id collission, looping. count:" i id)
                  (when (> i 1000)
                    (timbre/fatal "failed to find unique id for task, this should never happen")
                    (lib/shutdown))
@@ -115,7 +113,6 @@
           (try
             (let [item @task
                   id (-swap-take! state task queue-name retry-timeout-minutes)]
-              (timbre/debug "take!" queue-name item)
               {:status 200
                :headers {:id id}
                :body (lib/json-dumps item)})
@@ -132,7 +129,6 @@
         (let [item (lib/json-loads (:body req))]
           (dq/put! queue queue-name item)
           (swap! state update-in [:stats queue-name :puts] -update-stats)
-          (timbre/debug "put!" queue-name item)
           {:status 200})
         (catch JsonParseException ex
           {:status 400 :body "you didn't post valid json in the http body"})))))
