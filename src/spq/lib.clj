@@ -97,12 +97,14 @@
   (-> (System/nanoTime) (- nano-time) double (/ 1000000000.0 60.0)))
 
 (defn retry!
-  [queue task]
+  [queue task & [dont-mark-retry]]
   (let [val @task
         queue-name (.q-name (.slab task))]
     (if (>= (:retries val) (conf :server :max-retries))
       (do (dq/complete! task)
           (timbre/error "task retried more than max retries, dropping:" val)
           (assert false))
-      (do (dq/put! queue queue-name (update-in val [:retries] inc))
+      (do (dq/put! queue queue-name (update-in val [:retries] (if dont-mark-retry
+                                                                identity
+                                                                inc)))
           (dq/complete! task)))))

@@ -40,7 +40,7 @@
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
-      (do (lib/retry! queue task)
+      (do (lib/retry! queue task (:dont_mark_retry (:params req)))
           (swap! state update-in [:tasks] dissoc id)
           {:status 200
            :body (str "marked retry for task with id: " id)})
