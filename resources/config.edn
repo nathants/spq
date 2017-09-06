@@ -6,6 +6,7 @@
                  :slab-size 67108864} ;; in bytes. enqueued item cannot be larger than this
 
  :server {:period-millis 2000 ;; how long to sleep inbetween period tasks
+          :max-retries 5 ;; drop message and error log after this many retries
           :retry-timeout-minutes 5 ;; how long to wait before automatically /retry[ing] a /take[n] item if /complete has not been called
           :take-timeout-millis 5000} ;; how long to wait before failing on a /take when queue is empty
 

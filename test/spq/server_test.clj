@@ -471,4 +471,36 @@
                                          :throw-exceptions? false})
           _ (is (= 400 (:status resp)))])))
 
+(deftest max-retries
+  (with-server url _ {}
+    (let [item {:work-num "number1"}
+
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :query-params {:queue "queue_1"}})
+          _ (is (= 200 (:status resp)))
+
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queued 1 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
+
+          _ (dotimes [n (inc (conf :server :max-retries))]
+              (try
+                (let [resp (http/post (url "/take?queue=queue_1"))
+                      id (-> resp :headers :id)
+                      _ (is (string? id))
+                      _ (is (= 200 (:status resp)))
+                      _ (is (= item (lib/json-loads (:body resp))))
+
+                      resp (http/post (url "/retry") {:body id})
+                      _ (is (= 200 (:status resp)))])
+                (catch Throwable _
+                  (is (= n (conf :server :max-retries))))))
+
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queued 0 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
+          ])))
+
 ;; TODO add tests for accessing queues that dont exist. seems like all good?

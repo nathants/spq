@@ -40,7 +40,7 @@
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
-      (do (dq/retry! task)
+      (do (lib/retry! queue task)
           (swap! state update-in [:tasks] dissoc id)
           {:status 200
            :body (str "marked retry for task with id: " id)})
@@ -90,8 +90,7 @@
                               (assoc-in s [:tasks id] {:task task
                                                        :nano-time (System/nanoTime)
                                                        :queue-name queue-name
-                                                       :retry-timeout-minutes retry-timeout-minutes
-                                                       :retries 0})))
+                                                       :retry-timeout-minutes retry-timeout-minutes})))
                (catch AssertionError ex
                  (when (> i 1000)
                    (timbre/fatal "failed to find unique id for task, this should never happen")
@@ -111,7 +110,7 @@
         (if (= ::empty task)
           {:status 204}
           (try
-            (let [item @task
+            (let [{:keys [item]} @task
                   id (-swap-take! state task queue-name retry-timeout-minutes)]
               {:status 200
                :headers {:id id}
@@ -127,7 +126,7 @@
       {:status 400 :body "you didn't provide required query parameter ?queue=$QUEUE_NAME"}
       (try
         (let [item (lib/json-loads (:body req))]
-          (dq/put! queue queue-name item)
+          (dq/put! queue queue-name {:item item :retries 0})
           (swap! state update-in [:stats queue-name :puts] -update-stats)
           {:status 200})
         (catch JsonParseException ex
@@ -172,7 +171,7 @@
           (when (seq to-retry)
             (timbre/info "periodic task found" (count to-retry) "tasks to retry")
             (doseq [[id val] to-retry]
-              (dq/retry! (:task val))
+              (lib/retry! queue (:task val))
               (swap! state update-in [:tasks] dissoc id))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
