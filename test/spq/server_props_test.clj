@@ -32,7 +32,7 @@
                                200 (-> acc
                                      (assoc-in [:completed x] (get-in acc [:taken x]))
                                      (update-in [:taken] dissoc x))))
-                :retry! (let [resp (http/post (url "/retry") {:body (get-in acc [:ids x]) :query-params {:queue queue :dont_mark_retry :y}})]
+                :retry! (let [resp (http/post (url "/retry") {:body (get-in acc [:ids x]) :query-params {:queue queue :dont-mark-retry :y}})]
                           (condp = (:status resp)
                             204 acc
                             200 (update-in acc [:taken] dissoc x)))))]
