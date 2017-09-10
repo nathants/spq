@@ -169,9 +169,9 @@
                          (filter #(> (lib/minutes-ago (:nano-time (val %)))
                                      (get (val %) :retry-timeout-minutes))))]
           (when (seq to-retry)
-            (timbre/info "periodic task found" (count to-retry) "tasks to retry")
-            (doseq [[id val] to-retry]
-              (lib/retry! queue (:task val) :dont-mark-retry)
+            (doseq [[id {:keys [task]}] to-retry]
+              (timbre/error "retrying because never completed:" @task)
+              (lib/retry! queue task :dont-mark-retry)
               (swap! state update-in [:tasks] dissoc id))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
