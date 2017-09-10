@@ -1,7 +1,7 @@
 (ns spq.lib
   (:require [cheshire.core :as json]
-            [clojure.stacktrace :as st]
             [clojure.java.shell :as sh]
+            [clojure.stacktrace :as st]
             [confs.core :as confs :refer [conf]]
             [durable-queue :as dq]
             [taoensso.timbre :as timbre]))
@@ -100,10 +100,11 @@
   [queue task & [dont-mark-retry]]
   (let [val @task
         queue-name (.q-name (.slab task))]
-    (if (>= (:retries val) (conf :server :max-retries))
+    (if (and (>= (:retries val) (conf :server :max-retries))
+             (not dont-mark-retry))
       (do (dq/complete! task)
           (timbre/error "task retried more than max retries, dropping:" val)
-          (assert false))
+          (assert false (str "task retried more than max retries, dropping: " val)))
       (do (dq/put! queue queue-name (update-in val [:retries] (if dont-mark-retry
                                                                 identity
                                                                 inc)))

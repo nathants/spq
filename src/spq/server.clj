@@ -1,6 +1,5 @@
 (ns spq.server
   (:gen-class)
-  (:import com.fasterxml.jackson.core.JsonParseException)
   (:require [compojure
              [core :as compojure :refer [GET POST]]
              [route :as route]]
@@ -10,7 +9,8 @@
             [spq
              [http :as http :refer [defhandler]]
              [lib :as lib]]
-            [taoensso.timbre :as timbre]))
+            [taoensso.timbre :as timbre])
+  (:import com.fasterxml.jackson.core.JsonParseException))
 
 ;; TODO consider throttling incoming requests. so that if greather
 ;; than n requests are active at a time, new ones are established, but

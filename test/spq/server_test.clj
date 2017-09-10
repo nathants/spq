@@ -1,17 +1,12 @@
 (ns spq.server-test
   (:require [clj-http.client :as http]
             [clojure.test :refer :all]
+            [compojure.core :refer [GET]]
             [confs.core :as confs :refer [conf]]
-            [compojure
-             [core :refer [GET POST]]
-             [route :as route]]
             [spq
-             [lib :as lib]
              [http :refer [defhandler defmiddleware]]
-             [server :as sut]]
-            [taoensso.timbre :as timbre]
-            [byte-streams :as bs]
-            [manifold.deferred :as d]))
+             [lib :as lib]
+             [server :as sut]]))
 
 (defn rand-port
   []
@@ -496,6 +491,51 @@
                       _ (is (= 200 (:status resp)))])
                 (catch Throwable _
                   (is (= n (conf :server :max-retries))))))
+
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queued 0 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))])))
+
+(deftest max-retries-dont-mark-retry
+  (with-server url _ {}
+    (let [item {:work-num "number1"}
+
+          resp (http/post (url "/put") {:body (lib/json-dumps item)
+                                        :query-params {:queue "queue_1"}})
+          _ (is (= 200 (:status resp)))
+
+          resp (http/get (url "/stats"))
+          _ (is (= 200 (:status resp)))
+          _ (is (= {:queued 1 :active 0}
+                   (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
+
+          _ (dotimes [n (conf :server :max-retries)]
+              (let [resp (http/post (url "/take?queue=queue_1"))
+                    id (-> resp :headers :id)
+                    _ (is (string? id))
+                    _ (is (= 200 (:status resp)))
+                    _ (is (= item (lib/json-loads (:body resp))))
+
+                    resp (http/post (url "/retry") {:body id})
+                    _ (is (= 200 (:status resp)))]))
+
+          resp (http/post (url "/take?queue=queue_1"))
+          id (-> resp :headers :id)
+          _ (is (string? id))
+          _ (is (= 200 (:status resp)))
+          _ (is (= item (lib/json-loads (:body resp))))
+          resp (http/post (url "/retry") {:body id :query-params {:dont-mark-retry "y"}})
+          _ (is (= 200 (:status resp)))
+
+
+          resp (http/post (url "/take?queue=queue_1"))
+          id (-> resp :headers :id)
+          _ (is (string? id))
+          _ (is (= 200 (:status resp)))
+          _ (is (= item (lib/json-loads (:body resp))))
+          resp (http/post (url "/retry") {:body id :throw-exceptions? false})
+          _ (is (= 500 (:status resp)))
 
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
