@@ -170,7 +170,7 @@
                                      (get (val %) :retry-timeout-minutes))))]
           (when (seq to-retry)
             (doseq [[id {:keys [task]}] to-retry]
-              (timbre/error "retrying because never completed:" @task)
+              (timbre/info "retrying because never completed:" @task)
               (lib/retry! queue task :dont-mark-retry)
               (swap! state update-in [:tasks] dissoc id))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
