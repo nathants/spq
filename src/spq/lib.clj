@@ -103,7 +103,7 @@
     (if (and (>= (:retries val) (conf :server :max-retries))
              (not dont-mark-retry))
       (do (dq/complete! task)
-          (timbre/error "task retried more than max retries, dropping:" (:item val))
+          (timbre/error "task retried more than max retries, dropping:" queue-name (:item val))
           (assert false (str "task retried more than max retries, dropping: " queue-name " " (:item val))))
       (do (dq/put! queue queue-name (update-in val [:retries] (if dont-mark-retry
                                                                 identity
