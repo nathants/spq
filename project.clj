@@ -6,7 +6,7 @@
                  [com.taoensso/timbre "4.10.0"]
                  [factual/durable-queue "0.1.5"]
                  [clj-http "3.5.0"]
-                 [aleph "0.4.3"]
+                 [aleph "0.4.4-alpha4"]
                  [compojure "1.6.0"]
                  [cheshire "5.6.3"]
                  [snapshots/confs "master-a8ee32c"]]
