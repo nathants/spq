@@ -479,18 +479,24 @@
           _ (is (= {:queued 1 :active 0}
                    (-> resp :body lib/json-loads :queue_1 (select-keys [:queued :active]))))
 
-          _ (dotimes [n (inc (conf :server :max-retries))]
-              (try
-                (let [resp (http/post (url "/take?queue=queue_1"))
-                      id (-> resp :headers :id)
-                      _ (is (string? id))
-                      _ (is (= 200 (:status resp)))
-                      _ (is (= item (lib/json-loads (:body resp))))
+          _ (dotimes [_ (conf :server :max-retries)]
+              (let [resp (http/post (url "/take?queue=queue_1"))
+                    id (-> resp :headers :id)
+                    _ (is (string? id))
+                    _ (is (= 200 (:status resp)))
+                    _ (is (= item (lib/json-loads (:body resp))))
 
-                      resp (http/post (url "/retry") {:body id})
-                      _ (is (= 200 (:status resp)))])
-                (catch Throwable _
-                  (is (= n (conf :server :max-retries))))))
+                    resp (http/post (url "/retry") {:body id})
+                    _ (is (= 200 (:status resp)))]))
+
+          _ (let [resp (http/post (url "/take?queue=queue_1"))
+                  id (-> resp :headers :id)
+                  _ (is (string? id))
+                  _ (is (= 200 (:status resp)))
+                  _ (is (= item (lib/json-loads (:body resp))))
+
+                  resp (http/post (url "/retry") {:body id :throw-exceptions? false})
+                  _ (is (= 403 (:status resp)))])
 
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))
@@ -535,7 +541,7 @@
           _ (is (= 200 (:status resp)))
           _ (is (= item (lib/json-loads (:body resp))))
           resp (http/post (url "/retry") {:body id :throw-exceptions? false})
-          _ (is (= 500 (:status resp)))
+          _ (is (= 403 (:status resp)))
 
           resp (http/get (url "/stats"))
           _ (is (= 200 (:status resp)))

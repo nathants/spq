@@ -40,11 +40,13 @@
   [req]
   (let [id (:body req)]
     (if-let [task (get-in @state [:tasks id :task])]
-      (do (lib/retry! queue task (:dont-mark-retry (:params req)))
-          (swap! state update-in [:tasks] dissoc id)
-          {:status 200
-           :body (str "marked retry for task with id: " id)})
-      {:status 204})))
+      (try
+        (lib/retry! queue task (:dont-mark-retry (:params req)))
+        (swap! state update-in [:tasks] dissoc id)
+        {:status 200 :body (str "marked retry for task with id: " id)}
+        (catch AssertionError ex
+          {:status 403 :body "task retried too many times, dropping item"}))
+      {:status 204 :body "no such item, noop"})))
 
 (defn -update-stats
   [stats]
@@ -171,8 +173,11 @@
           (when (seq to-retry)
             (doseq [[id {:keys [task]}] to-retry]
               (timbre/info "retrying because never completed:" @task)
-              (lib/retry! queue task :dont-mark-retry)
-              (swap! state update-in [:tasks] dissoc id))))
+              (try
+                (lib/retry! queue task :dont-mark-retry)
+                (swap! state update-in [:tasks] dissoc id)
+                (catch AssertionError _
+                  nil)))))
         (time/in (conf :server :period-millis) #(periodic-task stop-periodic-task))
         (catch Throwable ex
           (timbre/fatal ex "error in period task")
