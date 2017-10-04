@@ -216,7 +216,7 @@
       (dq/fsync queue))))
 
 (defn -main
-  [port & confs]
+  [port conf & confs]
   (lib/setup-logging)
-  (apply confs/reset! confs)
+  (apply confs/reset! conf confs)
   (main (read-string port)))

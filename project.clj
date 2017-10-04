@@ -10,6 +10,7 @@
                  [compojure "1.6.0"]
                  [cheshire "5.6.3"]
                  [snapshots/confs "master-a8ee32c"]]
+  :main spq.server
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}}
   :uberjar-name "spq.jar"
   :plugins [[s3-wagon-private "1.3.0-alpha2"]]
